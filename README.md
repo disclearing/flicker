@@ -1,6 +1,6 @@
 # @disclearing/flicker
 
-Utility for flickering text, images, and DOM elements with configurable timing, intensity, and advanced image manipulation. Includes CSS filters, text effects, presets, plugins, timeline/keyframes, group orchestration, audio-reactive mode, canvas/WebGL renderers, and framework adapters.
+Utility for flickering text, images, and DOM elements with configurable timing, intensity, and advanced image manipulation. Includes a **unified text writer** (write/queue/add/remove), **text presets** (zalgo, terminal, neo, cosmic, horror), CSS filters, text effects (scramble, typewriter, decode), presets, plugins, timeline/keyframes, group orchestration, audio-reactive mode, canvas/WebGL renderers, and framework adapters.
 
 ## Install
 
@@ -61,7 +61,34 @@ createImageSequence(img, seqOpts).start();
 // Combined
 const combined = getCombinedPreset('horrorGlitch', 'horror', { sequence: { images: ['/1.jpg', '/2.jpg'] } });
 createCombinedFlicker(img, combined).start();
+
+// Text writer presets: zalgo, terminal, neo, cosmic, horror
+const textOpts = getTextPreset('zalgo', { interval: 40 });
+createTextWriter(el, textOpts).write('Hello world');
 ```
+
+## Text writer
+
+Unified writer API: `write()`, `queue()`, `add()`, `remove()` with scramble, typewriter, decode, or glyph-sub effects. Respects `engine`, `respectReducedMotion`, and `autoPauseOnHidden` like other controllers.
+
+```js
+import { createTextWriter, getTextPreset } from '@disclearing/flicker';
+
+const el = document.querySelector('.text-target');
+const writer = createTextWriter(el, { mode: 'scramble', interval: 60 });
+
+writer.write('Hello');           // animate in one string
+writer.queue(['Line 1', 'Line 2'], 500, true);  // queue phrases, optional loop
+writer.add(' more');             // append and animate new part only
+writer.remove(3);               // remove last 3 chars
+writer.pause();
+writer.resume();
+writer.destroy();
+```
+
+- **Modes**: `'scramble'` (reveal from random glyphs), `'typewriter'` (character-by-character, optional human-like variance and punctuation pause), `'decode'` (each char resolves from random to final), `'glyph-sub'` (continuous substitution).
+- **Options**: `glyphPool`, `interval`, `minInterval`/`maxInterval`, `humanLike`, `pauseOnSpaces`, `punctuationPauseMs`, `html: 'strip' | 'preserve'`, `letterize: 'in-place' | 'fragment'`, `onStep(index, char, isComplete)`, `onComplete`, plus engine and a11y options.
+- **Helpers**: `decodeEntities()`, `letterizeToFragment()`, `setLetterizedContent()` for custom flows; `runDecode()` for one-shot decode effect.
 
 ## Plugins
 
@@ -250,7 +277,8 @@ validateOrThrow(userOptions, validateFlickerOptions, 'Flicker');
 ## Effects and text modes
 
 - **CSS filters**: `applyFilters(el, { blur, contrast, hueRotate, saturate, chromaticAberration, rgbSplit })`; use `filters` in flicker options for the "off" phase.
-- **Text**: `preparePerCharFlicker(container)`, `runScrambleReveal(container, options)`, `runGlyphSubstitution(container, options)`, `runTypewriter(container, options)`.
+- **Text**: `preparePerCharFlicker(container)`, `runScrambleReveal(container, options)`, `runGlyphSubstitution(container, options)`, `runTypewriter(container, options)`, `runDecode(container, options)` (decode/decrypt: each char resolves from random glyphs). Options support `onStep(index, char, isComplete)` and `startFromIndex` for writer add(). Container gets `data-flicker-state="writing"` and class `flicker-writing` during animation; spans get `data-flicker-char-index`.
+- **HTML/entities**: `decodeEntities(str)`, `letterizeToFragment(text)`, `setLetterizedContent(container, text)`. Use `html: 'strip' | 'preserve'` and `decodeEntitiesIn` in effect options.
 
 ## Controllers (summary)
 

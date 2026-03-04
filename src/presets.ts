@@ -2,7 +2,7 @@
  * Built-in presets: option bundles for common flicker and image-sequence effects.
  */
 
-import type { FlickerOptions, ImageSequenceOptions, CombinedFlickerOptions, FilterOptions } from './types.js';
+import type { FlickerOptions, ImageSequenceOptions, CombinedFlickerOptions, FilterOptions, TextWriterOptions, WriterMode } from './types.js';
 
 export interface PresetFlickerOptions extends Partial<FlickerOptions> {}
 export interface PresetSequenceOptions extends Partial<Omit<ImageSequenceOptions, 'images'>> {}
@@ -134,4 +134,73 @@ export function getCombinedPreset(
     flicker: getFlickerPreset(flickerPresetName, overrides.flicker),
     sequence: getSequencePreset(sequencePresetName, overrides.sequence),
   };
+}
+
+// --- Text writer presets (glitch/scramble/typewriter) ---
+
+const ZALGO_POOL = '\u0300\u0301\u0302\u0303\u0304\u0305\u0306\u0307\u0308\u0309\u030A\u030B\u030C\u030D\u030E\u030F\u0310\u0311\u0312\u0313\u0314\u0315\u0316\u0317\u0318\u0319\u031A\u031B\u031C\u031D\u031E\u031F\u0320\u0321\u0322\u0323\u0324\u0325\u0326\u0327\u0328\u0329\u032A\u032B\u032C\u032D\u032E\u032F\u0330\u0331\u0332\u0333\u0334\u0335\u0336\u0337\u0338\u0339\u033A\u033B\u033C\u033D\u033E\u033F';
+const TERMINAL_POOL = '01█▓▒░▀▄▌▐■□▪▫●○◆◇★☆';
+const NEO_POOL = '!@#$%^&*_+-=[]{}|;:,.<>?/~`';
+const COSMIC_POOL = '✦✧★☆♦♠♥♣♤♡♢♧∞§¶†‡';
+
+export interface PresetTextWriterOptions extends Partial<TextWriterOptions> {}
+
+export const textPresetZalgo: PresetTextWriterOptions = {
+  mode: 'decode' as WriterMode,
+  glyphPool: ZALGO_POOL,
+  interval: 45,
+  decodeDuration: 50,
+  html: 'strip',
+};
+
+export const textPresetTerminal: PresetTextWriterOptions = {
+  mode: 'typewriter' as WriterMode,
+  glyphPool: TERMINAL_POOL,
+  interval: 60,
+  humanLike: true,
+  minInterval: 40,
+  maxInterval: 120,
+  pauseOnSpaces: 80,
+  punctuationPauseMs: 150,
+  html: 'strip',
+};
+
+export const textPresetNeo: PresetTextWriterOptions = {
+  mode: 'scramble' as WriterMode,
+  glyphPool: NEO_POOL,
+  interval: 50,
+  html: 'strip',
+};
+
+export const textPresetCosmic: PresetTextWriterOptions = {
+  mode: 'decode' as WriterMode,
+  glyphPool: COSMIC_POOL,
+  interval: 70,
+  decodeDuration: 60,
+  html: 'strip',
+};
+
+export const textPresetHorror: PresetTextWriterOptions = {
+  mode: 'scramble' as WriterMode,
+  glyphPool: '!@#$%^&*()_+-=[]{}|;:,.<>?/~`',
+  interval: 40,
+  html: 'strip',
+};
+
+export const textPresets = {
+  zalgo: textPresetZalgo,
+  terminal: textPresetTerminal,
+  neo: textPresetNeo,
+  cosmic: textPresetCosmic,
+  horror: textPresetHorror,
+} as const;
+
+export type TextPresetName = keyof typeof textPresets;
+
+/**
+ * Resolve a text writer preset by name and merge with user options.
+ */
+export function getTextPreset(name: TextPresetName, overrides: Partial<TextWriterOptions> = {}): TextWriterOptions {
+  const base = textPresets[name] ?? {};
+  return { ...base, ...overrides } as TextWriterOptions;
 }

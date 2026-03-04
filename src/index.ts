@@ -16,6 +16,11 @@ export type {
   TimingEngine,
   FilterOptions,
   TextMode,
+  WriterMode,
+  HtmlMode,
+  LetterizeMode,
+  TextWriterOptions,
+  TextWriterController,
 } from './types.js';
 
 // Constants
@@ -73,8 +78,22 @@ export {
   runScrambleReveal,
   runGlyphSubstitution,
   runTypewriter,
+  runDecode,
+  decodeEntities,
+  letterizeToFragment,
+  setLetterizedContent,
+  randomChar,
 } from './effects.js';
-export type { TextEffectOptions } from './effects.js';
+export type {
+  TextEffectOptions,
+  GetTextSpansOptions,
+  ScrambleRevealOptions,
+  TypewriterOptions,
+  DecodeOptions,
+} from './effects.js';
+
+// Text writer (unified write/queue/add/remove)
+export { createTextWriter } from './text-writer.js';
 
 // Presets
 export {
@@ -91,12 +110,16 @@ export {
   sequencePresets,
   getSequencePreset,
   getCombinedPreset,
+  textPresets,
+  getTextPreset,
 } from './presets.js';
 export type {
   PresetFlickerOptions,
   PresetSequenceOptions,
   FlickerPresetName,
   SequencePresetName,
+  TextPresetName,
+  PresetTextWriterOptions,
 } from './presets.js';
 
 // Plugins

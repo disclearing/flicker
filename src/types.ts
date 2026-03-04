@@ -29,7 +29,17 @@ export type TextMode =
   | 'per-char'       // flicker per character
   | 'scramble'       // scramble/reveal
   | 'glyph-sub'      // random glyph substitution
-  | 'typewriter';    // typewriter + flicker
+  | 'typewriter'     // typewriter + flicker
+  | 'decode';        // decode/decrypt: resolve from random glyphs to final char
+
+/** Writer animation mode for createTextWriter. */
+export type WriterMode = 'scramble' | 'typewriter' | 'decode' | 'glyph-sub';
+
+/** How to handle HTML in text: preserve structure or strip to plain text. */
+export type HtmlMode = 'preserve' | 'strip';
+
+/** Letterization: mutate container in-place or return a fragment. */
+export type LetterizeMode = 'in-place' | 'fragment';
 
 /**
  * Options for flicker behavior.
@@ -267,4 +277,68 @@ export interface CombinedFlickerController {
     imageIndex: number;
     imageUrl: string | null;
   };
+}
+
+/**
+ * Options for the unified text writer (createTextWriter).
+ */
+export interface TextWriterOptions {
+  /** Animation mode. Default: 'scramble' */
+  mode?: WriterMode;
+  /** Character pool for scramble/decode/glyph-sub. */
+  glyphPool?: string;
+  /** Interval per character (ms). Default: 80 */
+  interval?: number;
+  /** Min/max interval for human-like variance. */
+  minInterval?: number;
+  maxInterval?: number;
+  /** Add per-character timing variance. Default: false */
+  humanLike?: boolean;
+  /** Pause after spaces (ms). Only for typewriter. */
+  pauseOnSpaces?: number;
+  /** Pause after punctuation (ms). Only for typewriter. */
+  punctuationPauseMs?: number;
+  /** How to handle HTML in written text. Default: 'strip' */
+  html?: HtmlMode;
+  /** Letterization: 'in-place' mutates DOM, 'fragment' returns a fragment. Default: 'in-place' */
+  letterize?: LetterizeMode;
+  /** Timing engine. Default: 'timeout' */
+  engine?: TimingEngine;
+  /** Honor prefers-reduced-motion. Default: true */
+  respectReducedMotion?: boolean;
+  /** Auto-pause when tab hidden. Default: true */
+  autoPauseOnHidden?: boolean;
+  /** Decode duration per char for decode mode (ms). Default: 60 */
+  decodeDuration?: number;
+  /** Callback on each character step: (index, char, isComplete). */
+  onStep?: (index: number, char: string, isComplete: boolean) => void;
+  /** Callback when current write finishes. */
+  onComplete?: () => void;
+  /** Callback when writer starts. */
+  onStart?: () => void;
+  /** Callback when writer is destroyed. */
+  onDestroy?: () => void;
+  /** Callback when tab visibility changes. */
+  onVisibilityChange?: (visible: boolean) => void;
+}
+
+/** Controller for the unified text writer. */
+export interface TextWriterController {
+  /** Write a single string (replaces content, then animates). */
+  write(text: string): void;
+  /** Queue multiple phrases; plays in order. Optional interval between phrases, loop. */
+  queue(phrases: string[], intervalBetween?: number, loop?: boolean): void;
+  /** Append text to current content (animates the new part). */
+  add(text: string): void;
+  /** Remove n characters from the end. */
+  remove(n: number): void;
+  start(): void;
+  stop(): void;
+  pause(): void;
+  resume(): void;
+  destroy(): void;
+  readonly isRunning: boolean;
+  readonly isPaused: boolean;
+  /** Current displayed text length (for add/remove). */
+  readonly currentLength: number;
 }

@@ -2,7 +2,7 @@
  * CSS filter pipeline and text-specific effect modes.
  */
 
-import type { FilterOptions, TextMode } from './types.js';
+import type { FilterOptions, TextMode, HtmlMode, LetterizeMode } from './types.js';
 
 /** Build CSS filter string from FilterOptions. */
 export function buildFilterString(filters: FilterOptions): string {
@@ -54,14 +54,52 @@ export function applyFullFilters(element: HTMLElement | HTMLImageElement, filter
 
 const GLYPH_POOL = '!@#$%^&*()_+-=[]{}|;:,.<>?/~`';
 
+/** Decode HTML entities in a string (e.g. &#60; &amp; to < &). */
+export function decodeEntities(str: string): string {
+  if (typeof document === 'undefined') {
+    return str.replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
+      .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'");
+  }
+  const el = document.createElement('div');
+  el.innerHTML = str;
+  return el.textContent ?? str;
+}
+
 /** Get a random character for scramble/glyph substitution. */
-function randomChar(pool: string = GLYPH_POOL): string {
+export function randomChar(pool: string = GLYPH_POOL): string {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
-/** Wrap text nodes into spans per character. */
-function getTextSpans(container: HTMLElement): HTMLSpanElement[] {
+export interface GetTextSpansOptions {
+  html?: HtmlMode;
+  letterize?: LetterizeMode;
+  /** When stripping HTML, decode entities in the string. */
+  decodeEntitiesIn?: string;
+}
+
+/** Wrap text nodes into spans per character. Preserves element structure when html is 'preserve'. */
+function getTextSpansInternal(container: HTMLElement, options: GetTextSpansOptions = {}): HTMLSpanElement[] {
+  const html = options.html ?? 'preserve';
   const spans: HTMLSpanElement[] = [];
+
+  if (html === 'strip') {
+    const raw = options.decodeEntitiesIn != null ? decodeEntities(options.decodeEntitiesIn) : (container.textContent ?? '');
+    container.textContent = '';
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < raw.length; i++) {
+      const span = document.createElement('span');
+      span.textContent = raw[i];
+      span.setAttribute('data-char-index', String(i));
+      span.setAttribute('data-flicker-char-index', String(i));
+      spans.push(span);
+      frag.appendChild(span);
+    }
+    container.appendChild(frag);
+    return spans;
+  }
+
   const walk = (node: Node) => {
     if (node.nodeType === Node.TEXT_NODE && node.textContent) {
       const text = node.textContent;
@@ -70,6 +108,7 @@ function getTextSpans(container: HTMLElement): HTMLSpanElement[] {
         const span = document.createElement('span');
         span.textContent = text[i];
         span.setAttribute('data-char-index', String(spans.length));
+        span.setAttribute('data-flicker-char-index', String(spans.length));
         spans.push(span);
         frag.appendChild(span);
       }
@@ -83,6 +122,44 @@ function getTextSpans(container: HTMLElement): HTMLSpanElement[] {
   };
   walk(container);
   return spans;
+}
+
+/** Wrap text nodes into spans per character. */
+function getTextSpans(container: HTMLElement, options?: GetTextSpansOptions): HTMLSpanElement[] {
+  return getTextSpansInternal(container, options ?? {});
+}
+
+/**
+ * Letterize a string into a document fragment of per-character spans (non-destructive).
+ * Use when you want to mount the result yourself (e.g. React/Vue).
+ */
+export function letterizeToFragment(text: string, options: { decodeEntities?: boolean } = {}): DocumentFragment {
+  const decoded = options.decodeEntities !== false ? decodeEntities(text) : text;
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < decoded.length; i++) {
+    const span = document.createElement('span');
+    span.textContent = decoded[i];
+    span.setAttribute('data-char-index', String(i));
+    span.setAttribute('data-flicker-char-index', String(i));
+    frag.appendChild(span);
+  }
+  return frag;
+}
+
+/**
+ * Set container content to letterized spans for the given text (decodes entities).
+ * Used by the text writer for add() so effects can run with startFromIndex.
+ */
+export function setLetterizedContent(container: HTMLElement, text: string): void {
+  const decoded = decodeEntities(text);
+  container.textContent = '';
+  for (let i = 0; i < decoded.length; i++) {
+    const span = document.createElement('span');
+    span.textContent = decoded[i];
+    span.setAttribute('data-char-index', String(i));
+    span.setAttribute('data-flicker-char-index', String(i));
+    container.appendChild(span);
+  }
 }
 
 export interface TextEffectOptions {
@@ -99,8 +176,19 @@ export interface TextEffectOptions {
  * Apply per-character flicker by wrapping text in spans.
  * Caller can then run flicker on each span or the container.
  */
-export function preparePerCharFlicker(container: HTMLElement): HTMLSpanElement[] {
-  return getTextSpans(container);
+export function preparePerCharFlicker(container: HTMLElement, options?: GetTextSpansOptions): HTMLSpanElement[] {
+  return getTextSpans(container, options);
+}
+
+export interface ScrambleRevealOptions {
+  interval?: number;
+  glyphPool?: string;
+  onComplete?: () => void;
+  onStep?: (index: number, char: string, isComplete: boolean) => void;
+  html?: HtmlMode;
+  decodeEntitiesIn?: string;
+  /** When set, use existing spans in container and only reveal from this index (for writer add()). */
+  startFromIndex?: number;
 }
 
 /**
@@ -109,32 +197,46 @@ export function preparePerCharFlicker(container: HTMLElement): HTMLSpanElement[]
  */
 export function runScrambleReveal(
   container: HTMLElement,
-  options: { interval?: number; glyphPool?: string; onComplete?: () => void }
+  options: ScrambleRevealOptions = {}
 ): () => void {
   const interval = options.interval ?? 80;
   const pool = options.glyphPool ?? GLYPH_POOL;
-  const spans = getTextSpans(container);
-  if (spans.length === 0) return () => {};
+  const startFromIndex = options.startFromIndex ?? 0;
+  const useExistingSpans = startFromIndex > 0;
+  const spans = useExistingSpans
+    ? (Array.from(container.querySelectorAll<HTMLSpanElement>('span[data-flicker-char-index]'))
+        .sort((a, b) => Number(a.getAttribute('data-flicker-char-index')) - Number(b.getAttribute('data-flicker-char-index'))))
+    : (options.decodeEntitiesIn != null
+        ? getTextSpansInternal(container, { html: 'strip', decodeEntitiesIn: options.decodeEntitiesIn })
+        : getTextSpans(container, { html: options.html }));
+  if (spans.length === 0 || startFromIndex >= spans.length) return () => {};
   const original: string[] = spans.map((s) => s.textContent ?? '');
-  let index = 0;
+  let index = startFromIndex;
   let cancelled = false;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  container.setAttribute('data-flicker-state', 'writing');
+  container.classList.add('flicker-writing');
+  for (let i = startFromIndex; i < spans.length; i++) spans[i].textContent = randomChar(pool);
   const tick = () => {
     if (cancelled || index >= spans.length) {
+      container.removeAttribute('data-flicker-state');
+      container.classList.remove('flicker-writing');
+      options.onStep?.(index, '', true);
       options.onComplete?.();
       return;
     }
-    spans[index].textContent = original[index];
+    const char = original[index];
+    spans[index].textContent = char;
+    options.onStep?.(index, char, index === spans.length - 1);
     index++;
     timeoutId = setTimeout(tick, interval);
   };
-  spans.forEach((s, i) => {
-    s.textContent = randomChar(pool);
-  });
   timeoutId = setTimeout(tick, interval);
   return () => {
     cancelled = true;
     if (timeoutId != null) clearTimeout(timeoutId);
+    container.removeAttribute('data-flicker-state');
+    container.classList.remove('flicker-writing');
   };
 }
 
@@ -144,12 +246,14 @@ export function runScrambleReveal(
  */
 export function runGlyphSubstitution(
   container: HTMLElement,
-  options: { interval?: number; glyphPool?: string; probability?: number }
+  options: { interval?: number; glyphPool?: string; probability?: number; html?: HtmlMode; decodeEntitiesIn?: string }
 ): () => void {
   const interval = options.interval ?? 200;
   const pool = options.glyphPool ?? GLYPH_POOL;
   const probability = options.probability ?? 0.3;
-  const spans = getTextSpans(container);
+  const spans = options.decodeEntitiesIn != null
+    ? getTextSpansInternal(container, { html: 'strip', decodeEntitiesIn: options.decodeEntitiesIn })
+    : getTextSpans(container, { html: options.html });
   if (spans.length === 0) return () => {};
   const original: string[] = spans.map((s) => s.textContent ?? '');
   let cancelled = false;
@@ -167,36 +271,163 @@ export function runGlyphSubstitution(
   };
 }
 
+export interface DecodeOptions {
+  interval?: number;
+  decodeDuration?: number;
+  glyphPool?: string;
+  onComplete?: () => void;
+  onStep?: (index: number, char: string, isComplete: boolean) => void;
+  html?: HtmlMode;
+  decodeEntitiesIn?: string;
+  /** When set, use existing spans and only decode from this index (for writer add()). */
+  startFromIndex?: number;
+}
+
 /**
- * Typewriter effect: reveal one character at a time. Optional flicker on current char.
+ * Decode effect: each character cycles through random glyphs then resolves to final character.
  * Returns stop function.
  */
-export function runTypewriter(
+export function runDecode(
   container: HTMLElement,
-  options: { interval?: number; onComplete?: () => void }
+  options: DecodeOptions = {}
 ): () => void {
-  const interval = options.interval ?? 100;
-  const spans = getTextSpans(container);
-  if (spans.length === 0) {
+  const resolveInterval = options.interval ?? 50;
+  const decodeDuration = options.decodeDuration ?? 60;
+  const pool = options.glyphPool ?? GLYPH_POOL;
+  const startFromIndex = options.startFromIndex ?? 0;
+  const useExistingSpans = startFromIndex > 0;
+  const spans = useExistingSpans
+    ? (Array.from(container.querySelectorAll<HTMLSpanElement>('span[data-flicker-char-index]'))
+        .sort((a, b) => Number(a.getAttribute('data-flicker-char-index')) - Number(b.getAttribute('data-flicker-char-index'))))
+    : (options.decodeEntitiesIn != null
+        ? getTextSpansInternal(container, { html: 'strip', decodeEntitiesIn: options.decodeEntitiesIn })
+        : getTextSpans(container, { html: options.html }));
+  if (spans.length === 0 || startFromIndex >= spans.length) {
     options.onComplete?.();
     return () => {};
   }
   const original: string[] = spans.map((s) => s.textContent ?? '');
-  spans.forEach((s) => { s.textContent = ''; });
-  let index = 0;
+  for (let i = startFromIndex; i < spans.length; i++) spans[i].textContent = randomChar(pool);
+  container.setAttribute('data-flicker-state', 'writing');
+  container.classList.add('flicker-writing');
+  let charIndex = startFromIndex;
   let cancelled = false;
-  const id = setInterval(() => {
-    if (cancelled || index >= spans.length) {
-      clearInterval(id);
+  const cycleId = setInterval(() => {
+    if (cancelled) return;
+    spans.forEach((s, i) => {
+      if (i < charIndex) s.textContent = original[i];
+      else if (i === charIndex) s.textContent = randomChar(pool);
+      else s.textContent = randomChar(pool);
+    });
+  }, decodeDuration);
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const resolveNext = () => {
+    if (cancelled || charIndex >= spans.length) {
+      clearInterval(cycleId);
+      spans.forEach((s, i) => { s.textContent = original[i]; });
+      container.removeAttribute('data-flicker-state');
+      container.classList.remove('flicker-writing');
+      options.onStep?.(charIndex, '', true);
       options.onComplete?.();
       return;
     }
-    spans[index].textContent = original[index];
-    index++;
-  }, interval);
+    spans[charIndex].textContent = original[charIndex];
+    const char = original[charIndex];
+    const isComplete = charIndex === spans.length - 1;
+    options.onStep?.(charIndex, char, isComplete);
+    charIndex++;
+    timeoutId = setTimeout(resolveNext, resolveInterval);
+  };
+  timeoutId = setTimeout(resolveNext, decodeDuration * 2);
   return () => {
     cancelled = true;
-    clearInterval(id);
+    clearInterval(cycleId);
+    if (timeoutId != null) clearTimeout(timeoutId);
+    container.removeAttribute('data-flicker-state');
+    container.classList.remove('flicker-writing');
+    spans.forEach((s, i) => { s.textContent = original[i]; });
+  };
+}
+
+function isPunctuationOrSpace(ch: string): boolean {
+  return /[\s.,!?;:'"()[\]{}]/.test(ch);
+}
+
+export interface TypewriterOptions {
+  interval?: number;
+  minInterval?: number;
+  maxInterval?: number;
+  humanLike?: boolean;
+  pauseOnSpaces?: number;
+  punctuationPauseMs?: number;
+  onComplete?: () => void;
+  onStep?: (index: number, char: string, isComplete: boolean) => void;
+  html?: HtmlMode;
+  decodeEntitiesIn?: string;
+  /** When set, use existing spans and only reveal from this index (for writer add()). */
+  startFromIndex?: number;
+}
+
+/**
+ * Typewriter effect: reveal one character at a time. Optional human-like variance and punctuation pause.
+ * Returns stop function.
+ */
+export function runTypewriter(
+  container: HTMLElement,
+  options: TypewriterOptions = {}
+): () => void {
+  const baseInterval = options.interval ?? 100;
+  const minInterval = options.minInterval ?? baseInterval * 0.7;
+  const maxInterval = options.maxInterval ?? baseInterval * 1.5;
+  const humanLike = options.humanLike ?? false;
+  const pauseOnSpaces = options.pauseOnSpaces ?? 0;
+  const punctuationPauseMs = options.punctuationPauseMs ?? 0;
+  const startFromIndex = options.startFromIndex ?? 0;
+  const useExistingSpans = startFromIndex > 0;
+  const spans = useExistingSpans
+    ? (Array.from(container.querySelectorAll<HTMLSpanElement>('span[data-flicker-char-index]'))
+        .sort((a, b) => Number(a.getAttribute('data-flicker-char-index')) - Number(b.getAttribute('data-flicker-char-index'))))
+    : (options.decodeEntitiesIn != null
+        ? getTextSpansInternal(container, { html: 'strip', decodeEntitiesIn: options.decodeEntitiesIn })
+        : getTextSpans(container, { html: options.html }));
+  if (spans.length === 0 || startFromIndex >= spans.length) {
+    options.onComplete?.();
+    return () => {};
+  }
+  const original: string[] = spans.map((s) => s.textContent ?? '');
+  for (let i = startFromIndex; i < spans.length; i++) spans[i].textContent = '';
+  let index = startFromIndex;
+  let cancelled = false;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  container.setAttribute('data-flicker-state', 'writing');
+  container.classList.add('flicker-writing');
+  const scheduleNext = () => {
+    if (cancelled || index >= spans.length) {
+      container.removeAttribute('data-flicker-state');
+      container.classList.remove('flicker-writing');
+      options.onStep?.(index, '', true);
+      options.onComplete?.();
+      return;
+    }
+    const char = original[index];
+    spans[index].textContent = char;
+    const isComplete = index === spans.length - 1;
+    options.onStep?.(index, char, isComplete);
+    index++;
+    let delay = baseInterval;
+    if (humanLike && minInterval != null && maxInterval != null) {
+      delay = minInterval + Math.random() * (maxInterval - minInterval);
+    }
+    if (char === ' ' && pauseOnSpaces > 0) delay += pauseOnSpaces;
+    if (punctuationPauseMs > 0 && isPunctuationOrSpace(char)) delay += punctuationPauseMs;
+    timeoutId = setTimeout(scheduleNext, delay);
+  };
+  timeoutId = setTimeout(scheduleNext, baseInterval);
+  return () => {
+    cancelled = true;
+    if (timeoutId != null) clearTimeout(timeoutId);
+    container.removeAttribute('data-flicker-state');
+    container.classList.remove('flicker-writing');
     spans.forEach((s, i) => { s.textContent = original[i]; });
   };
 }
