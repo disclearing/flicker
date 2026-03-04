@@ -1,6 +1,6 @@
 {
   "name": "@disclearing/flicker",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Utility for flickering text, images, and DOM elements with configurable timing and intensity",
   "type": "module",
   "main": "./dist/index.js",
@@ -11,7 +11,32 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/adapters/react.d.ts",
+      "import": "./dist/adapters/react.js",
+      "default": "./dist/adapters/react.js"
+    },
+    "./vue": {
+      "types": "./dist/adapters/vue.d.ts",
+      "import": "./dist/adapters/vue.js",
+      "default": "./dist/adapters/vue.js"
+    },
+    "./svelte": {
+      "types": "./dist/adapters/svelte.d.ts",
+      "import": "./dist/adapters/svelte.js",
+      "default": "./dist/adapters/svelte.js"
     }
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true },
+    "vue": { "optional": true },
+    "svelte": { "optional": true }
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "vue": ">=3.0.0",
+    "svelte": ">=4.0.0"
   },
   "files": [
     "dist"
@@ -33,6 +58,8 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
+    "@types/react": "^18.0.0",
+    "react": "^18.2.0",
     "typescript": "^5.3.0"
   }
 }

@@ -135,6 +135,13 @@ export function createCombinedFlicker(
         imageUrl: sequenceController.currentImage,
       };
     },
+
+    destroy() {
+      flickerController.destroy();
+      sequenceController.destroy();
+      running = false;
+      paused = false;
+    },
   };
 
   return controller;

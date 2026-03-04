@@ -1,11 +1,11 @@
-# flicker
+# @disclearing/flicker
 
-Utility for flickering text, images, and DOM elements with configurable timing, intensity, and advanced image manipulation. Use it for glitch effects, loading states, image carousels, or attention-grabbing animations.
+Utility for flickering text, images, and DOM elements with configurable timing, intensity, and advanced image manipulation. Includes CSS filters, text effects, presets, plugins, timeline/keyframes, group orchestration, audio-reactive mode, canvas/WebGL renderers, and framework adapters.
 
 ## Install
 
 ```bash
-npm install flicker
+npm install @disclearing/flicker
 ```
 
 ## Basic Usage
@@ -13,284 +13,204 @@ npm install flicker
 ### Flicker a single element
 
 ```js
-import { createFlicker } from 'flicker';
+import { createFlicker } from '@disclearing/flicker';
 
 const el = document.querySelector('.my-text');
 const controller = createFlicker(el, { interval: 100 });
 
 controller.start();
-// later: controller.stop();
+// later: controller.stop(); controller.destroy();
 ```
 
-### By selector
+### By selector (SSR-safe)
 
 ```js
-import { flickerElement, flickerSelector } from 'flicker';
+import { flickerElement, flickerSelector } from '@disclearing/flicker';
 
-// One element
 const ctrl = flickerElement('#logo');
 if (ctrl) ctrl.start();
 
-// All matching elements
 const controllers = flickerSelector('.flicker-me');
 controllers.forEach((c) => c.start());
 ```
 
-## Image Sequences (Advanced)
+## Options: Engine, reduced motion, visibility
 
-Cycle through multiple images with transitions, preloading, and effects.
+- **`engine`**: `'timeout'` (default) or `'raf'` for requestAnimationFrame-based timing.
+- **`respectReducedMotion`**: When `true` (default), honors `prefers-reduced-motion` and disables or softens flicker.
+- **`autoPauseOnHidden`**: When `true` (default), pauses when the tab is hidden and resumes when visible.
+- **Richer events**: `onStart`, `onPause`, `onResume`, `onDestroy`, `onVisibilityChange`; image sequences also support `onTransitionStart`, `onTransitionEnd`, `onLoop`.
 
-### Basic image cycler
+Always call **`destroy()`** when discarding a controller to clear timers and listeners.
+
+## Presets
+
+Use built-in presets for common looks:
 
 ```js
-import { createImageSequence } from 'flicker';
+import { getFlickerPreset, getSequencePreset, getCombinedPreset } from '@disclearing/flicker';
 
-const img = document.querySelector('#slideshow');
-const sequence = createImageSequence(img, {
-  images: [
-    '/img/frame1.jpg',
-    '/img/frame2.jpg',
-    '/img/frame3.jpg',
-    '/img/frame4.jpg',
-  ],
-  interval: 500,
-  transition: 'crossfade',
-  transitionDuration: 300,
-  loop: true,
-  preload: true,
-  onChange: (index, total, url) => {
-    console.log(`Showing ${index + 1} of ${total}: ${url}`);
-  },
-});
+// Flicker presets: neonSign, horrorGlitch, oldTV, warningAlarm
+const opts = getFlickerPreset('horrorGlitch', { interval: 40 });
+createFlicker(el, opts).start();
 
-sequence.start();
+// Sequence presets: neon, horror, oldTV, warning
+const seqOpts = getSequencePreset('horror', { images: ['/a.jpg', '/b.jpg'] });
+createImageSequence(img, seqOpts).start();
+
+// Combined
+const combined = getCombinedPreset('horrorGlitch', 'horror', { sequence: { images: ['/1.jpg', '/2.jpg'] } });
+createCombinedFlicker(img, combined).start();
 ```
 
-### Image sequence with selector
+## Plugins
+
+Register custom transitions and effects:
 
 ```js
-import { imageSequence, imageSequenceAll } from 'flicker';
+import { registerTransition, registerEffect, createFlicker } from '@disclearing/flicker';
 
-// Single element
-const ctrl = imageSequence('#hero-image', {
-  images: ['/img/a.jpg', '/img/b.jpg', '/img/c.jpg'],
-  interval: 1000,
+registerTransition('my-fade', async (element, newSrc, duration) => {
+  element.style.opacity = '0';
+  await new Promise((r) => setTimeout(r, duration / 2));
+  element.src = newSrc;
+  element.style.opacity = '1';
 });
-if (ctrl) ctrl.start();
 
-// All matching elements
-const ctrls = imageSequenceAll('.animated-image', {
-  images: ['/img/1.jpg', '/img/2.jpg', '/img/3.jpg'],
-  shuffle: true,
-  randomInterval: true,
+registerEffect('my-glow', (el, visible) => {
+  el.style.boxShadow = visible ? '0 0 20px rgba(255,0,0,0.5)' : 'none';
 });
-ctrls.forEach((c) => c.start());
+
+createFlicker(el, {}).start(); // registered effects run each tick
+createImageSequence(img, { images: ['/a.jpg', '/b.jpg'], transition: 'my-fade' }).start();
 ```
 
-### Transitions
+## Timeline and group orchestration
 
-Available transitions for image sequences:
-
-- `'instant'` – Immediate swap (default)
-- `'crossfade'` – Fade between images
-- `'slide-left'` – Slide from right to left
-- `'slide-right'` – Slide from left to right
-- `'slide-up'` – Slide from bottom to top
-- `'slide-down'` – Slide from top to bottom
-- `'zoom'` – Zoom in/out transition
-- `'flicker'` – Flicker effect during transition
-
-### Image sequence options
-
-| Option               | Type       | Default    | Description                                              |
-|----------------------|------------|------------|----------------------------------------------------------|
-| `images`             | `string[]` | required   | Array of image URLs to cycle through.                    |
-| `interval`           | number     | 1000       | Ms between image changes.                                |
-| `minInterval`        | number     | 500        | Min ms when `randomInterval` is true.                    |
-| `maxInterval`        | number     | 2000       | Max ms when `randomInterval` is true.                    |
-| `randomInterval`     | boolean    | false      | Use random interval in [min, max].                       |
-| `transition`         | string     | 'instant'  | Transition type (see above).                             |
-| `transitionDuration` | number     | 300        | Duration of transition in ms.                              |
-| `loop`               | boolean    | true       | Whether to loop the sequence.                            |
-| `shuffle`            | boolean    | false      | Randomize image order.                                   |
-| `startIndex`         | number     | 0          | Start from this index.                                   |
-| `direction`          | 1 \| -1     | 1          | Forward (1) or backward (-1) direction.                  |
-| `preload`            | boolean    | true       | Preload images for smooth transitions.                   |
-| `preloadAhead`       | number     | 2          | Number of images to preload ahead.                       |
-| `duration`           | number     | —          | Stop after this many ms (optional).                      |
-| `onChange`           | function   | —          | `(index, total, url) => void` on image change.             |
-| `onComplete`         | function   | —          | Called when all images shown (non-looping).              |
-| `onStop`             | function   | —          | Called when stopped.                                     |
-| `onError`            | function   | —          | `(url, error) => void` on image load failure.            |
-
-## Combined Flicker + Image Sequence
-
-Glitch effect that flickers while cycling through images.
+**Timeline**: run steps in order (flicker for N ms, pause, custom callback, etc.):
 
 ```js
-import { createCombinedFlicker } from 'flicker';
+import { createTimeline } from '@disclearing/flicker';
 
-const img = document.querySelector('#glitch-image');
-const combo = createCombinedFlicker(img, {
-  flicker: {
-    interval: 50,
-    randomInterval: true,
-    minInterval: 30,
-    maxInterval: 100,
-    mode: 'opacity',
-  },
-  sequence: {
-    images: ['/img/glitch1.jpg', '/img/glitch2.jpg', '/img/glitch3.jpg'],
-    interval: 800,
-    transition: 'flicker',
-    loop: true,
-  },
-});
-
-combo.start();
-
-// Access state
-console.log(combo.state); // { visible: true, imageIndex: 2, imageUrl: '/img/glitch3.jpg' }
+const timeline = createTimeline([
+  { type: 'flicker', element: titleEl, options: { interval: 50 }, duration: 300 },
+  { type: 'pause', duration: 500 },
+  { type: 'callback', fn: () => console.log('Done step 2') },
+], { loop: false, onComplete: () => console.log('Timeline done') });
+timeline.start();
 ```
 
-## Preloading Utilities
-
-Manually preload images for instant display:
+**Group**: start multiple controllers with a shared clock and optional phase offsets:
 
 ```js
-import { preloadImages, isImageCached, clearImageCache } from 'flicker';
+import { createGroup, createFlicker } from '@disclearing/flicker';
 
-// Preload a batch
-await preloadImages(['/img/1.jpg', '/img/2.jpg', '/img/3.jpg']);
+const c1 = createFlicker(el1, { interval: 100 });
+const c2 = createFlicker(el2, { interval: 100 });
+const group = createGroup([
+  { controller: c1 },
+  { controller: c2, phaseOffsetMs: 50 },
+]);
+group.start();
+```
 
-// Check if cached
-if (isImageCached('/img/1.jpg')) {
-  console.log('Ready to display');
+## Audio-reactive flicker
+
+Drive interval and intensity from microphone or audio element:
+
+```js
+import { createAudioReactiveFlicker, isAudioReactiveSupported } from '@disclearing/flicker';
+
+if (!isAudioReactiveSupported()) return;
+const audioEl = document.querySelector('audio');
+const ctrl = createAudioReactiveFlicker(domEl, { source: audioEl });
+ctrl.start();
+```
+
+## Canvas / WebGL renderers
+
+Use canvas for noise, scanline, or distortion effects (with fallback when unsupported):
+
+```js
+import { createCanvasRenderer, isCanvasSupported } from '@disclearing/flicker';
+
+if (!isCanvasSupported()) return;
+const renderer = createCanvasRenderer(videoEl, { type: 'scanline', scanlineSpacing: 4 });
+renderer.start();
+document.body.appendChild(renderer.canvas);
+```
+
+## Framework adapters
+
+**React** (install `react` when using):
+
+```js
+import { useFlicker, useFlickerController, useImageSequence, useTimeline } from '@disclearing/flicker/react';
+
+function MyComponent() {
+  const ref = useRef(null);
+  useFlicker(ref, { interval: 100 });
+  return <div ref={ref}>Flickering text</div>;
 }
-
-// Clear cache when done
-clearImageCache();
 ```
 
-## Flicker Options (Basic)
-
-| Option          | Type     | Default     | Description                                              |
-|-----------------|----------|-------------|----------------------------------------------------------|
-| `interval`      | number   | 80          | Ms between visibility toggles.                           |
-| `minInterval`   | number   | 40          | Min ms when `randomInterval` is true.                    |
-| `maxInterval`   | number   | 200         | Max ms when `randomInterval` is true.                    |
-| `randomInterval`| boolean  | false       | Use random interval in [min, max].                       |
-| `mode`          | string   | 'opacity'   | `'opacity'` \| `'visibility'` \| `'both'`.              |
-| `offOpacity`    | number   | 0           | Opacity when "off" (0–1).                                |
-| `duration`      | number   | —           | Stop after this many ms (optional).                      |
-| `onTick`        | function | —           | Called each toggle with `(visible: boolean)`.            |
-| `onStop`        | function | —           | Called when flicker stops.                               |
-
-## Controllers
-
-### `FlickerController`
-
-- `start()` – Start flickering.
-- `stop()` – Stop and restore visibility.
-- `setOptions(options)` – Update options while running.
-- `isRunning` – Boolean.
-
-### `ImageSequenceController`
-
-- `start()` – Start cycling.
-- `stop()` – Stop completely.
-- `pause()` – Pause cycling (keeps current image).
-- `resume()` – Resume from pause.
-- `jumpTo(index)` – Jump to specific image index.
-- `next()` – Go to next image.
-- `previous()` – Go to previous image.
-- `setOptions(options)` – Update options.
-- `preloadAll()` – Preload all images; returns Promise.
-- `isRunning` – Boolean.
-- `isPaused` – Boolean.
-- `currentIndex` – Number (readonly).
-- `totalImages` – Number (readonly).
-- `currentImage` – String URL or null (readonly).
-
-### `CombinedFlickerController`
-
-Implements both interfaces plus:
-- `state` – `{ visible: boolean, imageIndex: number, imageUrl: string | null }`
-
-## Examples
-
-### Random glitch effect on text
+**Vue 3** (optional):
 
 ```js
-import { createFlicker } from 'flicker';
+import { useFlicker, flickerDirective } from '@disclearing/flicker/vue';
 
-const glitch = createFlicker(document.getElementById('title'), {
-  randomInterval: true,
-  minInterval: 50,
-  maxInterval: 150,
-  mode: 'both',
-  duration: 3000,
-  onStop: () => console.log('Glitch ended'),
-});
-glitch.start();
+// Composition: call start() in onMounted
+const { start, stop } = useFlicker(elementRef, { interval: 100 });
+
+// Directive
+app.directive('flicker', { mounted: flickerDirective, unmounted: unmountFlickerDirective });
 ```
 
-### Slideshow with crossfade
+**Svelte** (optional):
 
 ```js
-import { createImageSequence } from 'flicker';
-
-const slideshow = createImageSequence(document.getElementById('slideshow'), {
-  images: ['/slides/1.jpg', '/slides/2.jpg', '/slides/3.jpg', '/slides/4.jpg'],
-  interval: 4000,
-  transition: 'crossfade',
-  transitionDuration: 800,
-  preload: true,
-  preloadAhead: 2,
-});
-slideshow.start();
+import { flicker, imageSequence } from '@disclearing/flicker/svelte';
 ```
 
-### Shuffle images with random timing
+```svelte
+<div use:flicker={{ interval: 100 }}>Flickering</div>
+<img use:imageSequence={{ images: ['/a.jpg', '/b.jpg'], interval: 500 }} alt="" />
+```
+
+## Validation
+
+Validate options before use:
 
 ```js
-import { createImageSequence } from 'flicker';
+import { validateFlickerOptions, validateOrThrow } from '@disclearing/flicker';
 
-const randomShow = createImageSequence(document.getElementById('random'), {
-  images: ['/img/a.jpg', '/img/b.jpg', '/img/c.jpg', '/img/d.jpg'],
-  shuffle: true,
-  randomInterval: true,
-  minInterval: 200,
-  maxInterval: 1500,
-  transition: 'zoom',
-  loop: false,
-  onComplete: () => console.log('All images shown'),
-});
-randomShow.start();
+const result = validateFlickerOptions({ interval: -1 });
+if (!result.valid) console.error(result.errors);
+
+validateOrThrow(userOptions, validateFlickerOptions, 'Flicker');
 ```
 
-### Heavy glitch with combined effect
+## Image sequences (summary)
 
-```js
-import { createCombinedFlicker } from 'flicker';
+- **Transitions**: `instant`, `crossfade`, `slide-left/right/up/down`, `zoom`, `flicker`, or custom via `registerTransition`.
+- **Options**: `interval`, `randomInterval`, `minInterval`/`maxInterval`, `transition`, `transitionDuration`, `loop`, `shuffle`, `startIndex`, `direction`, `preload`, `preloadAhead`, `duration`, and callbacks including `onStart`, `onPause`, `onResume`, `onTransitionStart`, `onTransitionEnd`, `onLoop`, `onDestroy`, `onVisibilityChange`, `onError`.
 
-const heavyGlitch = createCombinedFlicker(document.getElementById('target'), {
-  flicker: {
-    interval: 30,
-    randomInterval: true,
-    minInterval: 10,
-    maxInterval: 60,
-    mode: 'both',
-  },
-  sequence: {
-    images: ['/glitch/1.png', '/glitch/2.png', '/glitch/3.png'],
-    interval: 200,
-    transition: 'flicker',
-    loop: true,
-  },
-});
-heavyGlitch.start();
-```
+## Preloader
+
+- **Retry/backoff**: `preloadImage(url, { retries: 2, backoffMs: 500 })`.
+- **Cache limits**: `configurePreloader({ maxCacheSize: 100, evictionStrategy: 'leastRecentlyUsed' })`.
+- **Eviction**: `evictStale(maxAgeMs)`.
+
+## Effects and text modes
+
+- **CSS filters**: `applyFilters(el, { blur, contrast, hueRotate, saturate, chromaticAberration, rgbSplit })`; use `filters` in flicker options for the "off" phase.
+- **Text**: `preparePerCharFlicker(container)`, `runScrambleReveal(container, options)`, `runGlyphSubstitution(container, options)`, `runTypewriter(container, options)`.
+
+## Controllers (summary)
+
+- **FlickerController**: `start()`, `stop()`, `setOptions()`, `destroy()`, `isRunning`.
+- **ImageSequenceController**: same plus `pause()`, `resume()`, `jumpTo()`, `next()`, `previous()`, `preloadAll()`, `isPaused`, `currentIndex`, `totalImages`, `currentImage`.
+- **CombinedFlickerController**: both plus `state` (visible, imageIndex, imageUrl).
 
 ## License
 

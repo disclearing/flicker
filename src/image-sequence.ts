@@ -4,6 +4,8 @@ import type {
   ImageTransition,
 } from './types.js';
 import { preloadImage, isImageCached } from './preloader.js';
+import { schedule, prefersReducedMotion, subscribeVisibility } from './engine.js';
+import { runTransition } from './plugins.js';
 
 function shuffleArray<T>(array: T[]): T[] {
   const arr = [...array];
@@ -19,154 +21,6 @@ function getNextInterval(opts: ImageSequenceOptions): number {
     return opts.minInterval + Math.random() * (opts.maxInterval - opts.minInterval);
   }
   return opts.interval ?? 1000;
-}
-
-/**
- * Apply a transition effect between two images.
- */
-function applyTransition(
-  imgElement: HTMLImageElement,
-  newSrc: string,
-  transition: ImageTransition,
-  duration: number
-): Promise<void> {
-  return new Promise((resolve) => {
-    const parent = imgElement.parentElement;
-    if (!parent) {
-      imgElement.src = newSrc;
-      resolve();
-      return;
-    }
-
-    switch (transition) {
-      case 'instant':
-        imgElement.src = newSrc;
-        resolve();
-        break;
-
-      case 'crossfade': {
-        const wrapper = document.createElement('div');
-        wrapper.style.cssText = 'position:relative;display:inline-block;';
-        const newImg = document.createElement('img');
-        newImg.src = newSrc;
-        newImg.style.cssText =
-          'position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;transition:opacity ' +
-          duration +
-          'ms;';
-        newImg.style.objectFit = imgElement.style.objectFit || 'cover';
-
-        if (imgElement.parentElement !== wrapper) {
-          parent.insertBefore(wrapper, imgElement);
-          wrapper.appendChild(imgElement);
-        }
-        wrapper.appendChild(newImg);
-
-        // Trigger reflow
-        void newImg.offsetWidth;
-        newImg.style.opacity = '1';
-
-        setTimeout(() => {
-          imgElement.src = newSrc;
-          imgElement.style.opacity = '1';
-          newImg.remove();
-          if (wrapper.parentElement) {
-            wrapper.parentElement.insertBefore(imgElement, wrapper);
-            wrapper.remove();
-          }
-          resolve();
-        }, duration);
-        break;
-      }
-
-      case 'slide-left':
-      case 'slide-right':
-      case 'slide-up':
-      case 'slide-down': {
-        const wrapper = document.createElement('div');
-        wrapper.style.cssText =
-          'position:relative;display:inline-block;overflow:hidden;';
-        const newImg = document.createElement('img');
-        newImg.src = newSrc;
-
-        const transforms: Record<string, string> = {
-          'slide-left': 'translateX(100%)',
-          'slide-right': 'translateX(-100%)',
-          'slide-up': 'translateY(100%)',
-          'slide-down': 'translateY(-100%)',
-        };
-        const ends: Record<string, string> = {
-          'slide-left': 'translateX(0)',
-          'slide-right': 'translateX(0)',
-          'slide-up': 'translateY(0)',
-          'slide-down': 'translateY(0)',
-        };
-
-        newImg.style.cssText =
-          `position:absolute;top:0;left:0;width:100%;height:100%;transform:${transforms[transition]};transition:transform ${duration}ms ease-out;`;
-        newImg.style.objectFit = imgElement.style.objectFit || 'cover';
-
-        parent.insertBefore(wrapper, imgElement);
-        wrapper.appendChild(imgElement);
-        wrapper.appendChild(newImg);
-
-        void newImg.offsetWidth;
-        newImg.style.transform = ends[transition];
-
-        setTimeout(() => {
-          imgElement.src = newSrc;
-          imgElement.style.transform = '';
-          newImg.remove();
-          if (wrapper.parentElement) {
-            wrapper.parentElement.insertBefore(imgElement, wrapper);
-            wrapper.remove();
-          }
-          resolve();
-        }, duration);
-        break;
-      }
-
-      case 'zoom': {
-        imgElement.style.transition = `transform ${duration}ms ease-in-out, opacity ${duration}ms ease-in-out`;
-        imgElement.style.transform = 'scale(0.8)';
-        imgElement.style.opacity = '0.5';
-
-        setTimeout(() => {
-          imgElement.src = newSrc;
-          void imgElement.offsetWidth;
-          imgElement.style.transform = 'scale(1)';
-          imgElement.style.opacity = '1';
-
-          setTimeout(() => {
-            imgElement.style.transition = '';
-            resolve();
-          }, duration);
-        }, duration / 2);
-        break;
-      }
-
-      case 'flicker': {
-        const flickerCount = Math.floor(duration / 50);
-        let count = 0;
-        const flick = () => {
-          imgElement.style.opacity = imgElement.style.opacity === '0' ? '1' : '0';
-          count++;
-          if (count >= flickerCount) {
-            imgElement.src = newSrc;
-            imgElement.style.opacity = '1';
-            resolve();
-          } else {
-            setTimeout(flick, 50);
-          }
-        };
-        flick();
-        break;
-      }
-
-      default:
-        imgElement.src = newSrc;
-        resolve();
-    }
-  });
 }
 
 /**
@@ -201,9 +55,19 @@ export function createImageSequence(
   let currentIndex = Math.max(0, Math.min(opts.startIndex ?? 0, images.length - 1));
   let running = false;
   let paused = false;
-  let timer: ReturnType<typeof setTimeout> | null = null;
+  let visibilityPaused = false;
+  let cancelSchedule: (() => void) | null = null;
   let startTime = 0;
   let runToken = 0;
+  let destroyed = false;
+  let unsubscribeVisibility: (() => void) | null = null;
+
+  const engine = opts.engine ?? 'timeout';
+  const respectReducedMotion = opts.respectReducedMotion ?? true;
+  const autoPauseOnHidden = opts.autoPauseOnHidden ?? true;
+  const reducedMotionActive = respectReducedMotion && prefersReducedMotion();
+
+  const isPaused = () => paused || visibilityPaused;
 
   // Set initial image
   if (images.length > 0) {
@@ -226,7 +90,7 @@ export function createImageSequence(
   }
 
   const showNext = async (): Promise<void> => {
-    if (!running || paused || !element.isConnected) return;
+    if (destroyed || !running || isPaused() || !element.isConnected) return;
     const currentRun = runToken;
 
     const direction = opts.direction ?? 1;
@@ -234,6 +98,7 @@ export function createImageSequence(
 
     if (nextIndex >= images.length) {
       if (opts.loop) {
+        opts.onLoop?.();
         nextIndex = 0;
       } else {
         opts.onComplete?.();
@@ -243,6 +108,7 @@ export function createImageSequence(
       }
     } else if (nextIndex < 0) {
       if (opts.loop) {
+        opts.onLoop?.();
         nextIndex = images.length - 1;
       } else {
         opts.onComplete?.();
@@ -253,6 +119,7 @@ export function createImageSequence(
     }
 
     const nextUrl = images[nextIndex];
+    opts.onTransitionStart?.(currentIndex, nextIndex);
 
     // Ensure image is loaded before transition
     try {
@@ -260,18 +127,19 @@ export function createImageSequence(
     } catch (err) {
       opts.onError?.(nextUrl, err as Error);
     }
-    if (!running || paused || !element.isConnected || currentRun !== runToken) return;
+    if (!running || isPaused() || !element.isConnected || currentRun !== runToken) return;
 
-    // Apply transition
-    await applyTransition(
+    // Apply transition (built-in or plugin)
+    await runTransition(
       element,
       nextUrl,
       opts.transition ?? 'instant',
       opts.transitionDuration ?? 300
     );
-    if (!running || paused || !element.isConnected || currentRun !== runToken) return;
+    if (!running || isPaused() || !element.isConnected || currentRun !== runToken) return;
 
     currentIndex = nextIndex;
+    opts.onTransitionEnd?.(currentIndex);
     opts.onChange?.(currentIndex, images.length, images[currentIndex]);
 
     // Check duration
@@ -286,9 +154,7 @@ export function createImageSequence(
 
     // Schedule next
     const nextInterval = getNextInterval(opts);
-    timer = setTimeout(() => {
-      void showNext();
-    }, nextInterval);
+    cancelSchedule = schedule(() => void showNext(), nextInterval, { engine });
   };
 
   const controller: ImageSequenceController = {
@@ -296,7 +162,7 @@ export function createImageSequence(
       return running;
     },
     get isPaused() {
-      return paused;
+      return paused || visibilityPaused;
     },
     get currentIndex() {
       return currentIndex;
@@ -314,21 +180,43 @@ export function createImageSequence(
       paused = false;
       runToken++;
       startTime = Date.now();
+      opts.onStart?.();
+      if (autoPauseOnHidden && typeof document !== 'undefined') {
+        unsubscribeVisibility = subscribeVisibility((visibleTab) => {
+          opts.onVisibilityChange?.(visibleTab);
+          if (visibleTab) {
+            if (visibilityPaused && running && !paused) {
+              visibilityPaused = false;
+              opts.onResume?.();
+              const interval = getNextInterval(opts);
+              cancelSchedule = schedule(() => void showNext(), interval, { engine });
+            }
+          } else {
+            if (running && !visibilityPaused) {
+              visibilityPaused = true;
+              cancelSchedule?.();
+              cancelSchedule = null;
+              opts.onPause?.();
+            }
+          }
+        });
+      }
+      if (reducedMotionActive) {
+        running = false;
+        opts.onStop?.();
+        return;
+      }
       void doPreload();
       const interval = getNextInterval(opts);
-      timer = setTimeout(() => {
-        void showNext();
-      }, interval);
+      cancelSchedule = schedule(() => void showNext(), interval, { engine });
     },
 
     stop() {
       running = false;
       paused = false;
       runToken++;
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
-      }
+      cancelSchedule?.();
+      cancelSchedule = null;
       opts.onStop?.();
     },
 
@@ -336,20 +224,18 @@ export function createImageSequence(
       if (!running || paused) return;
       paused = true;
       runToken++;
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
-      }
+      cancelSchedule?.();
+      cancelSchedule = null;
+      opts.onPause?.();
     },
 
     resume() {
       if (!running || !paused) return;
       paused = false;
       runToken++;
+      opts.onResume?.();
       const interval = getNextInterval(opts);
-      timer = setTimeout(() => {
-        void showNext();
-      }, interval);
+      cancelSchedule = schedule(() => void showNext(), interval, { engine });
     },
 
     jumpTo(index: number) {
@@ -397,6 +283,18 @@ export function createImageSequence(
         })
       );
       await Promise.all(promises);
+    },
+
+    destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      running = false;
+      paused = false;
+      cancelSchedule?.();
+      cancelSchedule = null;
+      unsubscribeVisibility?.();
+      unsubscribeVisibility = null;
+      opts.onDestroy?.();
     },
   };
 

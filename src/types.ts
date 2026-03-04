@@ -1,4 +1,37 @@
 /**
+ * Timing engine: setTimeout (default) or requestAnimationFrame.
+ */
+export type TimingEngine = 'timeout' | 'raf';
+
+/**
+ * CSS filter options for glitch/effect pipelines.
+ */
+export interface FilterOptions {
+  /** Blur radius in px. 0 = off. */
+  blur?: number;
+  /** Contrast multiplier. 1 = normal. */
+  contrast?: number;
+  /** Hue rotation in degrees. */
+  hueRotate?: number;
+  /** Saturation multiplier. 1 = normal. */
+  saturate?: number;
+  /** Chromatic aberration offset in px (red/cyan shift). */
+  chromaticAberration?: number;
+  /** RGB split offsets: [rX, rY, gX, gY, bX, bY] in px. */
+  rgbSplit?: [number, number, number, number, number, number];
+}
+
+/**
+ * Text-specific effect modes.
+ */
+export type TextMode =
+  | 'none'           // no text effect
+  | 'per-char'       // flicker per character
+  | 'scramble'       // scramble/reveal
+  | 'glyph-sub'      // random glyph substitution
+  | 'typewriter';    // typewriter + flicker
+
+/**
  * Options for flicker behavior.
  */
 export interface FlickerOptions {
@@ -16,14 +49,32 @@ export interface FlickerOptions {
   offOpacity?: number;
   /** Optional max duration in ms; flicker stops after this. Omit for infinite. */
   duration?: number;
+  /** Timing engine. Default: 'timeout' */
+  engine?: TimingEngine;
+  /** Honor prefers-reduced-motion (disable or soften flicker). Default: true */
+  respectReducedMotion?: boolean;
+  /** Auto-pause when tab is hidden. Default: true */
+  autoPauseOnHidden?: boolean;
+  /** Optional CSS filter overrides during "off" phase. */
+  filters?: FilterOptions;
+  /** Callback when flicker starts. */
+  onStart?: () => void;
   /** Callback when flicker cycle runs (visible → hidden or vice versa). */
   onTick?: (visible: boolean) => void;
   /** Callback when flicker is stopped (by duration or .stop()). */
   onStop?: () => void;
+  /** Callback when paused. */
+  onPause?: () => void;
+  /** Callback when resumed. */
+  onResume?: () => void;
+  /** Callback when controller is destroyed. */
+  onDestroy?: () => void;
+  /** Callback when tab visibility changes. */
+  onVisibilityChange?: (visible: boolean) => void;
 }
 
 /** Default options. */
-export const DEFAULT_FLICKER_OPTIONS: Required<Omit<FlickerOptions, 'duration' | 'onTick' | 'onStop'>> & Pick<FlickerOptions, 'duration' | 'onTick' | 'onStop'> = {
+export const DEFAULT_FLICKER_OPTIONS: Required<Omit<FlickerOptions, 'duration' | 'filters' | 'onStart' | 'onTick' | 'onStop' | 'onPause' | 'onResume' | 'onDestroy' | 'onVisibilityChange'>> & Pick<FlickerOptions, 'duration' | 'filters' | 'onStart' | 'onTick' | 'onStop' | 'onPause' | 'onResume' | 'onDestroy' | 'onVisibilityChange'> = {
   interval: 80,
   minInterval: 40,
   maxInterval: 200,
@@ -31,8 +82,17 @@ export const DEFAULT_FLICKER_OPTIONS: Required<Omit<FlickerOptions, 'duration' |
   mode: 'opacity',
   offOpacity: 0,
   duration: undefined,
+  engine: 'timeout',
+  respectReducedMotion: true,
+  autoPauseOnHidden: true,
+  filters: undefined,
+  onStart: undefined,
   onTick: undefined,
   onStop: undefined,
+  onPause: undefined,
+  onResume: undefined,
+  onDestroy: undefined,
+  onVisibilityChange: undefined,
 };
 
 /** Controller returned by createFlicker; use to start/stop and update options. */
@@ -40,6 +100,8 @@ export interface FlickerController {
   start(): void;
   stop(): void;
   setOptions(options: Partial<FlickerOptions>): void;
+  /** Clean up timers and listeners. Call when discarding the controller. */
+  destroy(): void;
   readonly isRunning: boolean;
 }
 
@@ -47,14 +109,14 @@ export interface FlickerController {
  * Transition types for image cycling.
  */
 export type ImageTransition =
-  | 'instant'      // Immediate swap
-  | 'crossfade'    // Fade between images
-  | 'slide-left'   // Slide from right to left
-  | 'slide-right'  // Slide from left to right
-  | 'slide-up'     // Slide from bottom to top
-  | 'slide-down'   // Slide from top to bottom
-  | 'zoom'         // Zoom in/out transition
-  | 'flicker';     // Use flicker effect during transition
+  | 'instant'
+  | 'crossfade'
+  | 'slide-left'
+  | 'slide-right'
+  | 'slide-up'
+  | 'slide-down'
+  | 'zoom'
+  | 'flicker';
 
 /**
  * Options for image sequence/cycling behavior.
@@ -88,19 +150,43 @@ export interface ImageSequenceOptions {
   preloadAhead?: number;
   /** Optional max duration in ms; cycling stops after this. */
   duration?: number;
+  /** Timing engine. Default: 'timeout' */
+  engine?: TimingEngine;
+  /** Honor prefers-reduced-motion. Default: true */
+  respectReducedMotion?: boolean;
+  /** Auto-pause when tab hidden. Default: true */
+  autoPauseOnHidden?: boolean;
+  /** Optional filter overrides during transitions. */
+  filters?: FilterOptions;
   /** Callback when image changes. Receives (currentIndex, totalImages, imageUrl). */
   onChange?: (index: number, total: number, url: string) => void;
   /** Callback when all images have been shown once (only fires if loop is false). */
   onComplete?: () => void;
   /** Callback when stopped. */
   onStop?: () => void;
+  /** Callback when sequence starts. */
+  onStart?: () => void;
+  /** Callback when paused. */
+  onPause?: () => void;
+  /** Callback when resumed. */
+  onResume?: () => void;
+  /** Callback when transition begins. */
+  onTransitionStart?: (fromIndex: number, toIndex: number) => void;
+  /** Callback when transition ends. */
+  onTransitionEnd?: (index: number) => void;
+  /** Callback when loop completes a full cycle. */
+  onLoop?: () => void;
+  /** Callback when controller is destroyed. */
+  onDestroy?: () => void;
+  /** Callback when tab visibility changes. */
+  onVisibilityChange?: (visible: boolean) => void;
   /** Callback when an image fails to load. Receives (url, error). */
   onError?: (url: string, error: Error) => void;
 }
 
 /** Default image sequence options. */
-export const DEFAULT_IMAGE_SEQUENCE_OPTIONS: Required<Omit<ImageSequenceOptions, 'images' | 'duration' | 'onChange' | 'onComplete' | 'onStop' | 'onError'>> &
-  Pick<ImageSequenceOptions, 'duration' | 'onChange' | 'onComplete' | 'onStop' | 'onError'> = {
+export const DEFAULT_IMAGE_SEQUENCE_OPTIONS: Required<Omit<ImageSequenceOptions, 'images' | 'duration' | 'filters' | 'onChange' | 'onComplete' | 'onStop' | 'onStart' | 'onPause' | 'onResume' | 'onTransitionStart' | 'onTransitionEnd' | 'onLoop' | 'onDestroy' | 'onVisibilityChange' | 'onError'>> &
+  Pick<ImageSequenceOptions, 'duration' | 'filters' | 'onChange' | 'onComplete' | 'onStop' | 'onStart' | 'onPause' | 'onResume' | 'onTransitionStart' | 'onTransitionEnd' | 'onLoop' | 'onDestroy' | 'onVisibilityChange' | 'onError'> = {
   interval: 1000,
   minInterval: 500,
   maxInterval: 2000,
@@ -114,9 +200,21 @@ export const DEFAULT_IMAGE_SEQUENCE_OPTIONS: Required<Omit<ImageSequenceOptions,
   preload: true,
   preloadAhead: 2,
   duration: undefined,
+  engine: 'timeout',
+  respectReducedMotion: true,
+  autoPauseOnHidden: true,
+  filters: undefined,
   onChange: undefined,
   onComplete: undefined,
   onStop: undefined,
+  onStart: undefined,
+  onPause: undefined,
+  onResume: undefined,
+  onTransitionStart: undefined,
+  onTransitionEnd: undefined,
+  onLoop: undefined,
+  onDestroy: undefined,
+  onVisibilityChange: undefined,
   onError: undefined,
 };
 
@@ -126,15 +224,12 @@ export interface ImageSequenceController {
   stop(): void;
   pause(): void;
   resume(): void;
-  /** Jump to a specific image index. */
   jumpTo(index: number): void;
-  /** Go to next image. */
   next(): void;
-  /** Go to previous image. */
   previous(): void;
   setOptions(options: Partial<ImageSequenceOptions>): void;
-  /** Preload all images manually. Returns promise that resolves when done. */
   preloadAll(): Promise<void>;
+  destroy(): void;
   readonly isRunning: boolean;
   readonly isPaused: boolean;
   readonly currentIndex: number;
@@ -146,22 +241,17 @@ export interface ImageSequenceController {
  * Options for combined flicker + image sequence effects.
  */
 export interface CombinedFlickerOptions {
-  /** Flicker options for the visibility effect. */
   flicker: FlickerOptions;
-  /** Image sequence options for cycling images. */
   sequence: ImageSequenceOptions;
 }
 
 /** Controller for combined flicker + image sequence. */
 export interface CombinedFlickerController {
-  // From FlickerController
   start(): void;
   stop(): void;
-  /** Update combined options. */
   setOptions(options: Partial<CombinedFlickerOptions>): void;
+  destroy(): void;
   readonly isRunning: boolean;
-
-  // From ImageSequenceController
   pause(): void;
   resume(): void;
   jumpTo(index: number): void;
@@ -172,8 +262,6 @@ export interface CombinedFlickerController {
   readonly currentIndex: number;
   readonly totalImages: number;
   readonly currentImage: string | null;
-
-  /** Get current combined state. */
   readonly state: {
     visible: boolean;
     imageIndex: number;
