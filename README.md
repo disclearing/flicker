@@ -127,7 +127,7 @@ const ctrl = createAudioReactiveFlicker(domEl, { source: audioEl });
 ctrl.start();
 ```
 
-## Canvas / WebGL renderers
+## Canvas / WebGL / WebGPU renderers
 
 Use canvas for noise, scanline, or distortion effects (with fallback when unsupported):
 
@@ -138,6 +138,24 @@ if (!isCanvasSupported()) return;
 const renderer = createCanvasRenderer(videoEl, { type: 'scanline', scanlineSpacing: 4 });
 renderer.start();
 document.body.appendChild(renderer.canvas);
+```
+
+Use WebGPU when available (with graceful no-op fallback if unsupported):
+
+```js
+import { createWebGPURenderer, isWebGPUSupported } from '@disclearing/flicker';
+
+if (isWebGPUSupported()) {
+  const gpuRenderer = createWebGPURenderer(videoEl, {
+    type: 'noise',
+    noiseAmount: 0.12,
+    scanlineOpacity: 0.1,
+  });
+  gpuRenderer.start();
+  if (gpuRenderer.canvas) {
+    document.body.appendChild(gpuRenderer.canvas);
+  }
+}
 ```
 
 ## Framework adapters

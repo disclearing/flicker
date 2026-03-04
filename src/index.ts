@@ -138,6 +138,8 @@ export type {
   CanvasRendererController,
 } from './renderer-canvas.js';
 export { isWebGLSupported, createWebGLCanvas } from './renderer-webgl.js';
+export { isWebGPUSupported, createWebGPURenderer, createWebGPUCanvas } from './renderer-webgpu.js';
+export type { WebGPURendererOptions, WebGPURendererController } from './renderer-webgpu.js';
 
 // Preloader config and eviction (preloadImage/preloadImages etc. are from image-sequence re-export)
 export { configurePreloader, evictStale } from './preloader.js';
