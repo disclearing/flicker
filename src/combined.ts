@@ -15,7 +15,15 @@ export function createCombinedFlicker(
   element: HTMLImageElement,
   options: CombinedFlickerOptions
 ): CombinedFlickerController {
-  const flickerController = createFlicker(element, options.flicker);
+  let visible = true;
+  const originalFlickerOnTick = options.flicker.onTick;
+  const flickerController = createFlicker(element, {
+    ...options.flicker,
+    onTick: (isVisible) => {
+      visible = isVisible;
+      originalFlickerOnTick?.(isVisible);
+    },
+  });
   const sequenceController = createImageSequence(element, options.sequence);
 
   let running = false;
@@ -49,11 +57,19 @@ export function createCombinedFlicker(
       paused = false;
       flickerController.stop();
       sequenceController.stop();
+      visible = true;
     },
 
     setOptions(newOpts: Partial<CombinedFlickerOptions>) {
       if (newOpts.flicker) {
-        flickerController.setOptions(newOpts.flicker);
+        const nextOnTick = newOpts.flicker.onTick;
+        flickerController.setOptions({
+          ...newOpts.flicker,
+          onTick: (isVisible) => {
+            visible = isVisible;
+            nextOnTick?.(isVisible);
+          },
+        });
       }
       if (newOpts.sequence) {
         sequenceController.setOptions(newOpts.sequence);
@@ -70,6 +86,7 @@ export function createCombinedFlicker(
       paused = true;
       flickerController.stop();
       sequenceController.pause();
+      visible = true;
     },
 
     resume() {
@@ -113,7 +130,7 @@ export function createCombinedFlicker(
 
     get state() {
       return {
-        visible: flickerController.isRunning,
+        visible,
         imageIndex: sequenceController.currentIndex,
         imageUrl: sequenceController.currentImage,
       };

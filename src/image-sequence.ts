@@ -2,9 +2,8 @@ import type {
   ImageSequenceOptions,
   ImageSequenceController,
   ImageTransition,
-  DEFAULT_IMAGE_SEQUENCE_OPTIONS,
 } from './types.js';
-import { preloadImage, preloadAhead, isImageCached } from './preloader.js';
+import { preloadImage, isImageCached } from './preloader.js';
 
 function shuffleArray<T>(array: T[]): T[] {
   const arr = [...array];
@@ -204,7 +203,7 @@ export function createImageSequence(
   let paused = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let startTime = 0;
-  let completedCycle = false;
+  let runToken = 0;
 
   // Set initial image
   if (images.length > 0) {
@@ -228,6 +227,7 @@ export function createImageSequence(
 
   const showNext = async (): Promise<void> => {
     if (!running || paused || !element.isConnected) return;
+    const currentRun = runToken;
 
     const direction = opts.direction ?? 1;
     let nextIndex = currentIndex + direction;
@@ -236,7 +236,6 @@ export function createImageSequence(
       if (opts.loop) {
         nextIndex = 0;
       } else {
-        completedCycle = true;
         opts.onComplete?.();
         running = false;
         opts.onStop?.();
@@ -246,7 +245,6 @@ export function createImageSequence(
       if (opts.loop) {
         nextIndex = images.length - 1;
       } else {
-        completedCycle = true;
         opts.onComplete?.();
         running = false;
         opts.onStop?.();
@@ -262,6 +260,7 @@ export function createImageSequence(
     } catch (err) {
       opts.onError?.(nextUrl, err as Error);
     }
+    if (!running || paused || !element.isConnected || currentRun !== runToken) return;
 
     // Apply transition
     await applyTransition(
@@ -270,6 +269,7 @@ export function createImageSequence(
       opts.transition ?? 'instant',
       opts.transitionDuration ?? 300
     );
+    if (!running || paused || !element.isConnected || currentRun !== runToken) return;
 
     currentIndex = nextIndex;
     opts.onChange?.(currentIndex, images.length, images[currentIndex]);
@@ -312,7 +312,7 @@ export function createImageSequence(
       if (running) return;
       running = true;
       paused = false;
-      completedCycle = false;
+      runToken++;
       startTime = Date.now();
       void doPreload();
       const interval = getNextInterval(opts);
@@ -324,6 +324,7 @@ export function createImageSequence(
     stop() {
       running = false;
       paused = false;
+      runToken++;
       if (timer) {
         clearTimeout(timer);
         timer = null;
@@ -334,6 +335,7 @@ export function createImageSequence(
     pause() {
       if (!running || paused) return;
       paused = true;
+      runToken++;
       if (timer) {
         clearTimeout(timer);
         timer = null;
@@ -343,6 +345,7 @@ export function createImageSequence(
     resume() {
       if (!running || !paused) return;
       paused = false;
+      runToken++;
       const interval = getNextInterval(opts);
       timer = setTimeout(() => {
         void showNext();
@@ -358,16 +361,25 @@ export function createImageSequence(
     },
 
     next() {
-      const nextIdx = (currentIndex + 1) % images.length;
+      if (images.length === 0) return;
+      const atEnd = currentIndex >= images.length - 1;
+      if (atEnd && !opts.loop) return;
+      const nextIdx = atEnd ? 0 : currentIndex + 1;
       this.jumpTo(nextIdx);
     },
 
     previous() {
-      const prevIdx = currentIndex === 0 ? images.length - 1 : currentIndex - 1;
+      if (images.length === 0) return;
+      const atStart = currentIndex === 0;
+      if (atStart && !opts.loop) return;
+      const prevIdx = atStart ? images.length - 1 : currentIndex - 1;
       this.jumpTo(prevIdx);
     },
 
     setOptions(newOpts: Partial<ImageSequenceOptions>) {
+      if (newOpts.images && newOpts.images.length === 0) {
+        throw new Error('ImageSequenceOptions.images must contain at least one image URL');
+      }
       opts = { ...opts, ...newOpts };
       if (newOpts.images) {
         images = opts.shuffle ? shuffleArray(newOpts.images) : [...newOpts.images];
