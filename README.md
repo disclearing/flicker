@@ -62,32 +62,38 @@ createImageSequence(img, seqOpts).start();
 const combined = getCombinedPreset('horrorGlitch', 'horror', { sequence: { images: ['/1.jpg', '/2.jpg'] } });
 createCombinedFlicker(img, combined).start();
 
-// Text writer presets: zalgo, terminal, neo, cosmic, horror
+// Text writer presets: zalgo, terminal, neo, cosmic, horror, encrypted, nier, default
 const textOpts = getTextPreset('zalgo', { interval: 40 });
 createTextWriter(el, textOpts).write('Hello world');
 ```
 
 ## Text writer
 
-Unified writer API: `write()`, `queue()`, `add()`, `remove()` with scramble, typewriter, decode, or glyph-sub effects. Respects `engine`, `respectReducedMotion`, and `autoPauseOnHidden` like other controllers.
+Unified writer API: `write()`, `writeAsync()`, `queue()`, `endless()`, `add()`, `remove()` with scramble, typewriter, decode, or glyph-sub effects. Respects `engine`, `respectReducedMotion`, and `autoPauseOnHidden` like other controllers.
 
 ```js
 import { createTextWriter, getTextPreset } from '@disclearing/flicker';
 
 const el = document.querySelector('.text-target');
-const writer = createTextWriter(el, { mode: 'scramble', interval: 60 });
+const writer = createTextWriter(el, { mode: 'scramble', interval: 60, cursor: true });
 
-writer.write('Hello');           // animate in one string
-writer.queue(['Line 1', 'Line 2'], 500, true);  // queue phrases, optional loop
-writer.add(' more');             // append and animate new part only
-writer.remove(3);               // remove last 3 chars
+writer.write('Hello');                              // animate in one string
+await writer.writeAsync('Done');                     // Promise resolves when animation finishes
+writer.queue(['Line 1', 'Line 2'], 500, true);       // queue phrases, optional loop
+writer.endless(['A', 'B', 'C'], 300);               // same as queue(..., true)
+writer.add(' more');                                // append and animate new part only
+writer.remove(3);                                   // remove last 3 chars
+writer.on('complete', () => console.log('done'));   // multiple listeners
+writer.off('complete', handler);
 writer.pause();
 writer.resume();
 writer.destroy();
 ```
 
+- **Custom event**: When a write completes, the element dispatches `flicker-writer-finished` with `detail: { text, length }` so you can listen without callbacks.
 - **Modes**: `'scramble'` (reveal from random glyphs), `'typewriter'` (character-by-character, optional human-like variance and punctuation pause), `'decode'` (each char resolves from random to final), `'glyph-sub'` (continuous substitution).
-- **Options**: `glyphPool`, `interval`, `minInterval`/`maxInterval`, `humanLike`, `pauseOnSpaces`, `punctuationPauseMs`, `html: 'strip' | 'preserve'`, `letterize: 'in-place' | 'fragment'`, `onStep(index, char, isComplete)`, `onComplete`, plus engine and a11y options.
+- **Options**: `glyphPool`, `interval`, `minInterval`/`maxInterval`, `humanLike`, `pauseOnSpaces`, `punctuationPauseMs`, `cursor: true | '|'` (typing cursor for typewriter/decode), `html: 'strip' | 'preserve'`, `letterize: 'in-place' | 'fragment'`, `onStep(index, char, isComplete)`, `onComplete`, plus engine and a11y options.
+- **Events**: `writer.on('start' | 'step' | 'complete' | 'destroy' | 'visibilitychange', fn)` and `writer.off(event, fn)` for multiple listeners.
 - **Helpers**: `decodeEntities()`, `letterizeToFragment()`, `setLetterizedContent()` for custom flows; `runDecode()` for one-shot decode effect.
 
 ## Plugins
@@ -190,12 +196,22 @@ if (isWebGPUSupported()) {
 **React** (install `react` when using):
 
 ```js
-import { useFlicker, useFlickerController, useImageSequence, useTimeline } from '@disclearing/flicker/react';
+import { useFlicker, useFlickerController, useImageSequence, useTimeline, useTextWriter } from '@disclearing/flicker/react';
 
 function MyComponent() {
   const ref = useRef(null);
   useFlicker(ref, { interval: 100 });
   return <div ref={ref}>Flickering text</div>;
+}
+
+// Text writer: bind ref and get controller (write, queue, writeAsync, endless, etc.)
+function WriterDemo() {
+  const ref = useRef(null);
+  const writerRef = useTextWriter(ref, { mode: 'typewriter', cursor: true });
+  useEffect(() => {
+    writerRef.current?.write('Hello world');
+  }, []);
+  return <div ref={ref} />;
 }
 ```
 

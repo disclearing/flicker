@@ -8,8 +8,10 @@ import type { RefObject } from 'react';
 import { createFlicker } from '../flicker.js';
 import { createImageSequence } from '../image-sequence.js';
 import { createTimeline } from '../timeline.js';
+import { createTextWriter } from '../text-writer.js';
 import type { FlickerOptions, FlickerController } from '../types.js';
 import type { ImageSequenceOptions, ImageSequenceController } from '../types.js';
+import type { TextWriterOptions, TextWriterController } from '../types.js';
 import type { TimelineStep, TimelineOptions, TimelineController } from '../timeline.js';
 
 /**
@@ -104,4 +106,34 @@ export function useTimeline(
     };
   }, []);
   return controllerRef.current;
+}
+
+/**
+ * Hook: bind text writer to an element ref. Returns the controller (write, queue, add, remove, etc.).
+ * Cleans up on unmount.
+ */
+export function useTextWriter<T extends HTMLElement>(
+  ref: RefObject<T | null>,
+  options: TextWriterOptions = {}
+): RefObject<TextWriterController | null> {
+  const controllerRef = useRef<TextWriterController | null>(null);
+  const optsRef = useRef(options);
+  optsRef.current = options;
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) {
+      controllerRef.current?.destroy();
+      controllerRef.current = null;
+      return;
+    }
+    const controller = createTextWriter(el, optsRef.current);
+    controllerRef.current = controller;
+    return () => {
+      controller.destroy();
+      controllerRef.current = null;
+    };
+  }, []);
+
+  return controllerRef;
 }

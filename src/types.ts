@@ -320,18 +320,31 @@ export interface TextWriterOptions {
   onDestroy?: () => void;
   /** Callback when tab visibility changes. */
   onVisibilityChange?: (visible: boolean) => void;
+  /** Show a typing cursor during typewriter/decode. true = '|', or pass character string. */
+  cursor?: boolean | string;
 }
+
+/** Writer event names for on/off. */
+export type TextWriterEventName = 'start' | 'step' | 'complete' | 'destroy' | 'visibilitychange';
 
 /** Controller for the unified text writer. */
 export interface TextWriterController {
   /** Write a single string (replaces content, then animates). */
   write(text: string): void;
+  /** Write and return a Promise that resolves when the animation finishes. */
+  writeAsync(text: string): Promise<void>;
   /** Queue multiple phrases; plays in order. Optional interval between phrases, loop. */
   queue(phrases: string[], intervalBetween?: number, loop?: boolean): void;
+  /** Run phrases in an endless loop (same as queue(phrases, intervalBetween, true)). */
+  endless(phrases: string[], intervalBetween?: number): void;
   /** Append text to current content (animates the new part). */
   add(text: string): void;
   /** Remove n characters from the end. */
   remove(n: number): void;
+  /** Add listener for event: 'start' | 'step' | 'complete' | 'destroy' | 'visibilitychange'. */
+  on(event: TextWriterEventName, fn: (...args: unknown[]) => void): void;
+  /** Remove listener. */
+  off(event: TextWriterEventName, fn: (...args: unknown[]) => void): void;
   start(): void;
   stop(): void;
   pause(): void;

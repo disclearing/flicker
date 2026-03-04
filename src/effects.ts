@@ -281,6 +281,8 @@ export interface DecodeOptions {
   decodeEntitiesIn?: string;
   /** When set, use existing spans and only decode from this index (for writer add()). */
   startFromIndex?: number;
+  /** Show typing cursor. true = '|', or pass character. */
+  cursor?: boolean | string;
 }
 
 /**
@@ -308,10 +310,29 @@ export function runDecode(
   }
   const original: string[] = spans.map((s) => s.textContent ?? '');
   for (let i = startFromIndex; i < spans.length; i++) spans[i].textContent = randomChar(pool);
+  const cursorChar = options.cursor === true ? '|' : (typeof options.cursor === 'string' ? options.cursor : '');
+  let cursorEl: HTMLSpanElement | null = null;
+  if (cursorChar) {
+    cursorEl = document.createElement('span');
+    cursorEl.className = 'flicker-cursor';
+    cursorEl.setAttribute('aria-hidden', 'true');
+    cursorEl.textContent = cursorChar;
+  }
+  const placeCursor = (afterIndex: number) => {
+    if (!cursorEl || !container.contains(cursorEl)) return;
+    const next = spans[afterIndex + 1];
+    if (next) container.insertBefore(cursorEl, next);
+    else container.appendChild(cursorEl);
+  };
+  const removeCursor = () => {
+    cursorEl?.remove();
+    cursorEl = null;
+  };
   container.setAttribute('data-flicker-state', 'writing');
   container.classList.add('flicker-writing');
   let charIndex = startFromIndex;
   let cancelled = false;
+  if (cursorEl && spans.length > 0) placeCursor(startFromIndex - 1);
   const cycleId = setInterval(() => {
     if (cancelled) return;
     spans.forEach((s, i) => {
@@ -319,10 +340,12 @@ export function runDecode(
       else if (i === charIndex) s.textContent = randomChar(pool);
       else s.textContent = randomChar(pool);
     });
+    if (cursorEl) placeCursor(charIndex);
   }, decodeDuration);
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   const resolveNext = () => {
     if (cancelled || charIndex >= spans.length) {
+      removeCursor();
       clearInterval(cycleId);
       spans.forEach((s, i) => { s.textContent = original[i]; });
       container.removeAttribute('data-flicker-state');
@@ -332,6 +355,7 @@ export function runDecode(
       return;
     }
     spans[charIndex].textContent = original[charIndex];
+    if (cursorEl) placeCursor(charIndex);
     const char = original[charIndex];
     const isComplete = charIndex === spans.length - 1;
     options.onStep?.(charIndex, char, isComplete);
@@ -341,6 +365,7 @@ export function runDecode(
   timeoutId = setTimeout(resolveNext, decodeDuration * 2);
   return () => {
     cancelled = true;
+    removeCursor();
     clearInterval(cycleId);
     if (timeoutId != null) clearTimeout(timeoutId);
     container.removeAttribute('data-flicker-state');
@@ -366,6 +391,8 @@ export interface TypewriterOptions {
   decodeEntitiesIn?: string;
   /** When set, use existing spans and only reveal from this index (for writer add()). */
   startFromIndex?: number;
+  /** Show typing cursor. true = '|', or pass character. */
+  cursor?: boolean | string;
 }
 
 /**
@@ -383,6 +410,7 @@ export function runTypewriter(
   const pauseOnSpaces = options.pauseOnSpaces ?? 0;
   const punctuationPauseMs = options.punctuationPauseMs ?? 0;
   const startFromIndex = options.startFromIndex ?? 0;
+  const cursorChar = options.cursor === true ? '|' : (typeof options.cursor === 'string' ? options.cursor : '');
   const useExistingSpans = startFromIndex > 0;
   const spans = useExistingSpans
     ? (Array.from(container.querySelectorAll<HTMLSpanElement>('span[data-flicker-char-index]'))
@@ -399,10 +427,28 @@ export function runTypewriter(
   let index = startFromIndex;
   let cancelled = false;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let cursorEl: HTMLSpanElement | null = null;
+  if (cursorChar) {
+    cursorEl = document.createElement('span');
+    cursorEl.className = 'flicker-cursor';
+    cursorEl.setAttribute('aria-hidden', 'true');
+    cursorEl.textContent = cursorChar;
+  }
   container.setAttribute('data-flicker-state', 'writing');
   container.classList.add('flicker-writing');
+  const placeCursor = (afterIndex: number) => {
+    if (!cursorEl || !container.contains(cursorEl)) return;
+    const next = spans[afterIndex + 1];
+    if (next) container.insertBefore(cursorEl, next);
+    else container.appendChild(cursorEl);
+  };
+  const removeCursor = () => {
+    cursorEl?.remove();
+    cursorEl = null;
+  };
   const scheduleNext = () => {
     if (cancelled || index >= spans.length) {
+      removeCursor();
       container.removeAttribute('data-flicker-state');
       container.classList.remove('flicker-writing');
       options.onStep?.(index, '', true);
@@ -411,6 +457,7 @@ export function runTypewriter(
     }
     const char = original[index];
     spans[index].textContent = char;
+    if (cursorEl) placeCursor(index);
     const isComplete = index === spans.length - 1;
     options.onStep?.(index, char, isComplete);
     index++;
@@ -422,9 +469,11 @@ export function runTypewriter(
     if (punctuationPauseMs > 0 && isPunctuationOrSpace(char)) delay += punctuationPauseMs;
     timeoutId = setTimeout(scheduleNext, delay);
   };
+  if (cursorEl && spans.length > 0) placeCursor(startFromIndex - 1);
   timeoutId = setTimeout(scheduleNext, baseInterval);
   return () => {
     cancelled = true;
+    removeCursor();
     if (timeoutId != null) clearTimeout(timeoutId);
     container.removeAttribute('data-flicker-state');
     container.classList.remove('flicker-writing');

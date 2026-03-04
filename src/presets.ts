@@ -187,12 +187,40 @@ export const textPresetHorror: PresetTextWriterOptions = {
   html: 'strip',
 };
 
+const ENCRYPTED_POOL = 'ABCDEF0123456789█▓▒░';
+export const textPresetEncrypted: PresetTextWriterOptions = {
+  mode: 'decode' as WriterMode,
+  glyphPool: ENCRYPTED_POOL,
+  interval: 55,
+  decodeDuration: 50,
+  html: 'strip',
+};
+
+const NIER_POOL = 'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ';
+export const textPresetNier: PresetTextWriterOptions = {
+  mode: 'decode' as WriterMode,
+  glyphPool: NIER_POOL,
+  interval: 60,
+  decodeDuration: 55,
+  html: 'strip',
+};
+
+export const textPresetDefault: PresetTextWriterOptions = {
+  mode: 'scramble' as WriterMode,
+  glyphPool: '!@#$%^&*()_+-=[]{}|;:,.<>?/~`',
+  interval: 80,
+  html: 'strip',
+};
+
 export const textPresets = {
   zalgo: textPresetZalgo,
   terminal: textPresetTerminal,
   neo: textPresetNeo,
   cosmic: textPresetCosmic,
   horror: textPresetHorror,
+  encrypted: textPresetEncrypted,
+  nier: textPresetNier,
+  default: textPresetDefault,
 } as const;
 
 export type TextPresetName = keyof typeof textPresets;

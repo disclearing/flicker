@@ -3,7 +3,7 @@
  * Uses engine, respectReducedMotion, and autoPauseOnHidden like other flicker controllers.
  */
 
-import type { TextWriterOptions, TextWriterController, WriterMode } from './types.js';
+import type { TextWriterOptions, TextWriterController, TextWriterEventName, WriterMode } from './types.js';
 import { decodeEntities } from './effects.js';
 import { setLetterizedContent } from './effects.js';
 import { runScrambleReveal } from './effects.js';
@@ -11,6 +11,8 @@ import { runTypewriter } from './effects.js';
 import { runDecode } from './effects.js';
 import { runGlyphSubstitution } from './effects.js';
 import { prefersReducedMotion, subscribeVisibility } from './engine.js';
+
+const FLICKER_WRITER_FINISHED = 'flicker-writer-finished';
 
 const DEFAULT_GLYPH_POOL = '!@#$%^&*()_+-=[]{}|;:,.<>?/~`';
 
@@ -29,6 +31,7 @@ function runWriterEffect(
   const maxInterval = opts.maxInterval ?? interval * 1.5;
   const reduced = (opts.respectReducedMotion !== false) && prefersReducedMotion();
 
+  const cursorOpt = opts.cursor === true ? true : (typeof opts.cursor === 'string' ? opts.cursor : undefined);
   const stepCb = (index: number, char: string, isComplete: boolean) => {
     opts.onStep?.(index, char, isComplete);
   };
@@ -60,6 +63,7 @@ function runWriterEffect(
       punctuationPauseMs: opts.punctuationPauseMs,
       decodeEntitiesIn: startFromIndex === 0 ? decodeEntitiesIn : undefined,
       startFromIndex: startFromIndex > 0 ? startFromIndex : undefined,
+      cursor: cursorOpt,
       onComplete,
       onStep: stepCb,
     });
@@ -71,6 +75,7 @@ function runWriterEffect(
       glyphPool: pool,
       decodeEntitiesIn: startFromIndex === 0 ? decodeEntitiesIn : undefined,
       startFromIndex: startFromIndex > 0 ? startFromIndex : undefined,
+      cursor: cursorOpt,
       onComplete,
       onStep: stepCb,
     });
@@ -110,6 +115,17 @@ export function createTextWriter(element: HTMLElement, options: TextWriterOption
   let queueLoop = false;
   let unsubscribeVisibility: (() => void) | null = null;
   const autoPauseOnHidden = opts.autoPauseOnHidden ?? true;
+  const listeners: Record<TextWriterEventName, Array<(...args: unknown[]) => void>> = {
+    start: [],
+    step: [],
+    complete: [],
+    destroy: [],
+    visibilitychange: [],
+  };
+
+  const fire = (event: TextWriterEventName, ...args: unknown[]) => {
+    listeners[event].forEach((fn) => { try { fn(...args); } catch (_) { /* ignore */ } });
+  };
 
   const playNextInQueue = () => {
     if (phraseQueue.length === 0) {
@@ -127,6 +143,10 @@ export function createTextWriter(element: HTMLElement, options: TextWriterOption
     startCurrentEffect(decoded, 0, () => {
       currentLength = decoded.length;
       opts.onComplete?.();
+      fire('complete');
+      if (typeof element.dispatchEvent === 'function') {
+        element.dispatchEvent(new CustomEvent(FLICKER_WRITER_FINISHED, { detail: { text: fullText, length: currentLength } }));
+      }
       if (queueIntervalBetween > 0) {
         const id = setTimeout(playNextInQueue, queueIntervalBetween);
         cancelCurrent = () => clearTimeout(id);
@@ -139,10 +159,17 @@ export function createTextWriter(element: HTMLElement, options: TextWriterOption
   const startCurrentEffect = (text: string, fromIndex: number, onComplete: () => void) => {
     if (fromIndex > 0) setLetterizedContent(element, text);
     cancelCurrent?.();
+    const mergedOpts: TextWriterOptions = {
+      ...opts,
+      onStep: (index, char, isComplete) => {
+        fire('step', index, char, isComplete);
+        opts.onStep?.(index, char, isComplete);
+      },
+    };
     cancelCurrent = runWriterEffect(
       element,
       opts.mode ?? 'scramble',
-      opts,
+      mergedOpts,
       text,
       fromIndex,
       onComplete
@@ -167,13 +194,28 @@ export function createTextWriter(element: HTMLElement, options: TextWriterOption
       fullText = decoded;
       currentLength = 0;
       opts.onStart?.();
+      fire('start');
       running = true;
       if (paused || pausedByVisibility) return;
       cancelCurrent?.();
       startCurrentEffect(decoded, 0, () => {
         currentLength = decoded.length;
         opts.onComplete?.();
+        fire('complete');
+        if (typeof element.dispatchEvent === 'function') {
+          element.dispatchEvent(new CustomEvent(FLICKER_WRITER_FINISHED, { detail: { text: fullText, length: currentLength } }));
+        }
         running = false;
+      });
+    },
+    writeAsync(text: string): Promise<void> {
+      return new Promise((resolve) => {
+        const onDone = () => {
+          resolve();
+          this.off('complete', onDone);
+        };
+        this.on('complete', onDone);
+        this.write(text);
       });
     },
     queue(phrases: string[], intervalBetween = 0, loop = false) {
@@ -183,9 +225,13 @@ export function createTextWriter(element: HTMLElement, options: TextWriterOption
       queueIntervalBetween = intervalBetween;
       queueLoop = loop;
       opts.onStart?.();
+      fire('start');
       running = true;
       if (paused || pausedByVisibility) return;
       playNextInQueue();
+    },
+    endless(phrases: string[], intervalBetween = 0) {
+      this.queue(phrases, intervalBetween, true);
     },
     add(text: string) {
       if (destroyed) return;
@@ -197,7 +243,19 @@ export function createTextWriter(element: HTMLElement, options: TextWriterOption
       startCurrentEffect(fullText, from, () => {
         currentLength = fullText.length;
         opts.onComplete?.();
+        fire('complete');
+        if (typeof element.dispatchEvent === 'function') {
+          element.dispatchEvent(new CustomEvent(FLICKER_WRITER_FINISHED, { detail: { text: fullText, length: currentLength } }));
+        }
       });
+    },
+    on(event: TextWriterEventName, fn: (...args: unknown[]) => void) {
+      listeners[event].push(fn);
+    },
+    off(event: TextWriterEventName, fn: (...args: unknown[]) => void) {
+      const list = listeners[event];
+      const i = list.indexOf(fn);
+      if (i !== -1) list.splice(i, 1);
     },
     remove(n: number) {
       if (destroyed || n <= 0) return;
@@ -239,12 +297,14 @@ export function createTextWriter(element: HTMLElement, options: TextWriterOption
       phraseQueue = [];
       unsubscribeVisibility?.();
       unsubscribeVisibility = null;
+      fire('destroy');
       opts.onDestroy?.();
     },
   };
 
   if (autoPauseOnHidden && typeof document !== 'undefined') {
     unsubscribeVisibility = subscribeVisibility((visible) => {
+      fire('visibilitychange', visible);
       opts.onVisibilityChange?.(visible);
       if (visible) {
         pausedByVisibility = false;

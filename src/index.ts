@@ -21,6 +21,7 @@ export type {
   LetterizeMode,
   TextWriterOptions,
   TextWriterController,
+  TextWriterEventName,
 } from './types.js';
 
 // Constants
