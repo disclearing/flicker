@@ -1,5 +1,5 @@
 {
-  "name": "flicker",
+  "name": "@disclearing/flicker",
   "version": "0.1.0",
   "description": "Utility for flickering text, images, and DOM elements with configurable timing and intensity",
   "type": "module",
