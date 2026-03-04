@@ -195,6 +195,34 @@ import { flicker, imageSequence } from '@disclearing/flicker/svelte';
 <img use:imageSequence={{ images: ['/a.jpg', '/b.jpg'], interval: 500 }} alt="" />
 ```
 
+**Expo / React Native** (optional):
+
+```js
+import { useExpoFlicker, useExpoImageSequence } from '@disclearing/flicker/expo';
+```
+
+```tsx
+function GlitchImage() {
+  const { currentImage, controller: seq } = useExpoImageSequence({
+    images: ['https://example.com/1.png', 'https://example.com/2.png'],
+    interval: 500,
+    loop: true,
+  });
+  const { opacity, controller: flicker } = useExpoFlicker({ interval: 80, offOpacity: 0.15 });
+
+  useEffect(() => {
+    seq.start();
+    flicker.start();
+    return () => {
+      seq.destroy();
+      flicker.destroy();
+    };
+  }, [seq, flicker]);
+
+  return <Image source={{ uri: currentImage ?? undefined }} style={{ opacity, width: 200, height: 200 }} />;
+}
+```
+
 ## Validation
 
 Validate options before use:

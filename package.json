@@ -1,6 +1,6 @@
 {
   "name": "@disclearing/flicker",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Utility for flickering text, images, and DOM elements with configurable timing and intensity",
   "type": "module",
   "main": "./dist/index.js",
@@ -26,17 +26,26 @@
       "types": "./dist/adapters/svelte.d.ts",
       "import": "./dist/adapters/svelte.js",
       "default": "./dist/adapters/svelte.js"
+    },
+    "./expo": {
+      "types": "./dist/adapters/expo.d.ts",
+      "import": "./dist/adapters/expo.js",
+      "default": "./dist/adapters/expo.js"
     }
   },
   "peerDependenciesMeta": {
     "react": { "optional": true },
     "vue": { "optional": true },
-    "svelte": { "optional": true }
+    "svelte": { "optional": true },
+    "expo": { "optional": true },
+    "react-native": { "optional": true }
   },
   "peerDependencies": {
     "react": ">=18.0.0",
     "vue": ">=3.0.0",
-    "svelte": ">=4.0.0"
+    "svelte": ">=4.0.0",
+    "expo": ">=50.0.0",
+    "react-native": ">=0.73.0"
   },
   "files": [
     "dist"
