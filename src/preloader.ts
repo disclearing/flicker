@@ -33,11 +33,30 @@ let config: Required<PreloaderConfig> = {
   evictionStrategy: 'leastRecentlyUsed',
 };
 
+function normalizePreloadOptions(options: PreloadOptions): Required<PreloadOptions> {
+  const retries = Number.isFinite(Number(options.retries)) ? Math.max(0, Math.floor(Number(options.retries))) : 2;
+  const backoffMs = Number.isFinite(Number(options.backoffMs)) ? Math.max(0, Number(options.backoffMs)) : 500;
+  const maxBackoffMs = Number.isFinite(Number(options.maxBackoffMs)) ? Math.max(0, Number(options.maxBackoffMs)) : 5000;
+  const priority = Number.isFinite(Number(options.priority)) ? Number(options.priority) : 0;
+  return {
+    retries,
+    backoffMs,
+    maxBackoffMs: Math.max(backoffMs, maxBackoffMs),
+    priority,
+  };
+}
+
 /**
  * Configure the global preloader (cache size, eviction).
  */
 export function configurePreloader(options: PreloaderConfig): void {
-  config = { ...config, ...options };
+  const maxCacheSize = Number.isFinite(Number(options.maxCacheSize))
+    ? Math.max(1, Math.floor(Number(options.maxCacheSize)))
+    : config.maxCacheSize;
+  const evictionStrategy = options.evictionStrategy === 'oldest' || options.evictionStrategy === 'leastRecentlyUsed'
+    ? options.evictionStrategy
+    : config.evictionStrategy;
+  config = { ...config, maxCacheSize, evictionStrategy };
 }
 
 function evictOne(): void {
@@ -83,13 +102,7 @@ export function preloadImage(
   url: string,
   options: PreloadOptions = {}
 ): Promise<HTMLImageElement> {
-  const opts = {
-    retries: 2,
-    backoffMs: 500,
-    maxBackoffMs: 5000,
-    priority: 0,
-    ...options,
-  };
+  const opts = normalizePreloadOptions(options);
 
   if (imageCache.has(url)) {
     const entry = imageCache.get(url)!;
@@ -144,7 +157,11 @@ export async function preloadImages(
   concurrency = 3,
   options: PreloadOptions = {}
 ): Promise<HTMLImageElement[]> {
-  const withPriority = urls.map((url, i) => ({ url, priority: options.priority ?? 0, index: i }));
+  const opts = normalizePreloadOptions(options);
+  const safeConcurrency = Number.isFinite(Number(concurrency))
+    ? Math.max(1, Math.floor(Number(concurrency)))
+    : 3;
+  const withPriority = urls.map((url, i) => ({ url, priority: opts.priority, index: i }));
   withPriority.sort((a, b) => b.priority - a.priority);
   const sortedUrls = withPriority.map((x) => x.url);
   const results: (HTMLImageElement | null)[] = new Array(urls.length);
@@ -155,7 +172,7 @@ export async function preloadImages(
       const url = queue.shift();
       if (!url) continue;
       try {
-        const img = await preloadImage(url, options);
+        const img = await preloadImage(url, opts);
         const idx = urls.indexOf(url);
         if (idx >= 0) results[idx] = img;
       } catch (err) {
@@ -164,7 +181,7 @@ export async function preloadImages(
     }
   }
 
-  const workers = Array(Math.min(concurrency, sortedUrls.length))
+  const workers = Array(Math.min(safeConcurrency, sortedUrls.length))
     .fill(null)
     .map(() => worker());
   await Promise.all(workers);

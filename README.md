@@ -158,21 +158,37 @@ import { createAudioReactiveFlicker, isAudioReactiveSupported } from '@discleari
 
 if (!isAudioReactiveSupported()) return;
 const audioEl = document.querySelector('audio');
-const ctrl = createAudioReactiveFlicker(domEl, { source: audioEl });
+const ctrl = createAudioReactiveFlicker(domEl, {
+  source: audioEl,
+  onError: (err) => console.warn('Audio-reactive unavailable', err.message),
+});
 ctrl.start();
 ```
 
 ## Canvas / WebGL / WebGPU renderers
 
-Canvas, WebGL, and WebGPU renderers apply noise, scanline, or distortion to a source image/video. Canvas auto-resizes with the source, pauses when the tab is hidden (`autoPauseOnHidden`), and supports `scale` and `throttleFps` for performance. WebGPU supports `ready()` promise, `autoResize`, and `onDeviceLost`. See [docs/advanced.md](./docs/advanced.md#canvas--webgl--webgpu-renderers).
+Canvas, WebGL, and WebGPU renderers apply noise, scanline, or distortion to a source image/video. Canvas auto-resizes with the source, pauses when the tab is hidden (`autoPauseOnHidden`), and supports `scale`/`throttleFps` for performance. WebGL supports continuous rendering via `createWebGLRenderer` and exposes `onContextLost`/`onError`. WebGPU supports `ready()` promise, `autoResize`, and `onDeviceLost`. See [docs/advanced.md](./docs/advanced.md#canvas--webgl--webgpu-renderers).
 
 ```js
-import { createCanvasRenderer, createWebGPURenderer, isCanvasSupported, isWebGPUSupported } from '@disclearing/flicker';
+import {
+  createCanvasRenderer,
+  createWebGLRenderer,
+  createWebGPURenderer,
+  isCanvasSupported,
+  isWebGLSupported,
+  isWebGPUSupported,
+} from '@disclearing/flicker';
 
 if (!isCanvasSupported()) return;
 const renderer = createCanvasRenderer(videoEl, { type: 'scanline', scanlineSpacing: 4 });
 renderer.start();
 document.body.appendChild(renderer.canvas);
+
+if (isWebGLSupported()) {
+  const webgl = createWebGLRenderer(videoEl, { type: 'distortion', autoResize: true });
+  webgl.start();
+  if (webgl.canvas) document.body.appendChild(webgl.canvas);
+}
 
 if (isWebGPUSupported()) {
   const gpu = createWebGPURenderer(videoEl, { type: 'noise', noiseAmount: 0.12 });
@@ -285,10 +301,17 @@ function GlitchImage() {
 Validate options before use:
 
 ```js
-import { validateFlickerOptions, validateOrThrow } from '@disclearing/flicker';
+import {
+  validateFlickerOptions,
+  validateTextWriterOptions,
+  validateOrThrow,
+} from '@disclearing/flicker';
 
 const result = validateFlickerOptions({ interval: -1 });
 if (!result.valid) console.error(result.errors);
+
+const textResult = validateTextWriterOptions({ mode: 'decode', decodeDuration: -5 });
+if (!textResult.valid) console.error(textResult.errors);
 
 validateOrThrow(userOptions, validateFlickerOptions, 'Flicker');
 ```
@@ -303,6 +326,7 @@ validateOrThrow(userOptions, validateFlickerOptions, 'Flicker');
 - **Retry/backoff**: `preloadImage(url, { retries: 2, backoffMs: 500 })`.
 - **Cache limits**: `configurePreloader({ maxCacheSize: 100, evictionStrategy: 'leastRecentlyUsed' })`.
 - **Eviction**: `evictStale(maxAgeMs)`.
+- Invalid numeric values are clamped to safe defaults (e.g. retries >= 0, concurrency >= 1, cache size >= 1).
 
 ## Effects and text modes
 

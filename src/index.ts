@@ -31,6 +31,7 @@ export { DEFAULT_FLICKER_OPTIONS } from './types.js';
 export {
   validateFlickerOptions,
   validateImageSequenceOptions,
+  validateTextWriterOptions,
   validateOrThrow,
   normalizeInterval,
   normalizeOpacity,
@@ -163,7 +164,8 @@ export type {
   CanvasEffectOptions,
   CanvasRendererController,
 } from './renderer-canvas.js';
-export { isWebGLSupported, createWebGLCanvas } from './renderer-webgl.js';
+export { isWebGLSupported, createWebGLCanvas, createWebGLRenderer } from './renderer-webgl.js';
+export type { WebGLRendererOptions, WebGLRendererController } from './renderer-webgl.js';
 export { isWebGPUSupported, createWebGPURenderer, createWebGPUCanvas } from './renderer-webgpu.js';
 export type { WebGPURendererOptions, WebGPURendererController } from './renderer-webgpu.js';
 

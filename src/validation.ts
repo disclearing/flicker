@@ -113,6 +113,93 @@ export function validateImageSequenceOptions(options: Record<string, unknown>): 
 }
 
 /**
+ * Validate TextWriterOptions. Returns errors and warnings; does not throw.
+ */
+export function validateTextWriterOptions(options: Record<string, unknown>): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (options.mode != null && !['scramble', 'typewriter', 'decode', 'glyph'].includes(String(options.mode))) {
+    errors.push('mode must be one of: scramble, typewriter, decode, glyph');
+  }
+  if (options.html != null && !['strip', 'preserve'].includes(String(options.html))) {
+    errors.push('html must be one of: strip, preserve');
+  }
+  if (options.letterize != null && !['in-place', 'fragment'].includes(String(options.letterize))) {
+    errors.push('letterize must be one of: in-place, fragment');
+  }
+  if (options.engine != null && !['timeout', 'raf'].includes(String(options.engine))) {
+    errors.push('engine must be one of: timeout, raf');
+  }
+
+  if (options.glyphPool != null) {
+    if (typeof options.glyphPool !== 'string' || options.glyphPool.length === 0) {
+      errors.push('glyphPool must be a non-empty string');
+    } else if (options.glyphPool.length < 2) {
+      warnings.push('glyphPool length < 2 may reduce visual variety');
+    }
+  }
+
+  if (options.interval != null) {
+    const v = Number(options.interval);
+    if (!Number.isFinite(v) || v < 0) errors.push('interval must be a non-negative number');
+    else if (v < 10) warnings.push('interval < 10ms may cause performance issues');
+  }
+  if (options.minInterval != null) {
+    const v = Number(options.minInterval);
+    if (!Number.isFinite(v) || v < 0) errors.push('minInterval must be a non-negative number');
+  }
+  if (options.maxInterval != null) {
+    const v = Number(options.maxInterval);
+    if (!Number.isFinite(v) || v < 0) errors.push('maxInterval must be a non-negative number');
+  }
+  if (options.minInterval != null && options.maxInterval != null) {
+    const min = Number(options.minInterval);
+    const max = Number(options.maxInterval);
+    if (min > max) errors.push('minInterval must be <= maxInterval');
+  }
+
+  if (options.pauseOnSpaces != null) {
+    const v = Number(options.pauseOnSpaces);
+    if (!Number.isFinite(v) || v < 0) errors.push('pauseOnSpaces must be a non-negative number');
+  }
+  if (options.punctuationPauseMs != null) {
+    const v = Number(options.punctuationPauseMs);
+    if (!Number.isFinite(v) || v < 0) errors.push('punctuationPauseMs must be a non-negative number');
+  }
+  if (options.decodeDuration != null) {
+    const v = Number(options.decodeDuration);
+    if (!Number.isFinite(v) || v < 0) errors.push('decodeDuration must be a non-negative number');
+  }
+  if (options.seed != null) {
+    const v = Number(options.seed);
+    if (!Number.isFinite(v)) errors.push('seed must be a finite number');
+  }
+
+  if (options.cursor != null) {
+    const c = options.cursor;
+    if (typeof c === 'boolean') {
+      // ok
+    } else if (typeof c === 'string') {
+      if (c.length === 0) warnings.push('cursor is an empty string and will not be visible');
+    } else if (typeof c === 'object') {
+      const obj = c as { char?: unknown; blink?: unknown };
+      if (obj.char != null && typeof obj.char !== 'string') errors.push('cursor.char must be a string');
+      if (obj.blink != null && typeof obj.blink !== 'boolean') errors.push('cursor.blink must be a boolean');
+      if (typeof obj.char === 'string' && obj.char.length === 0) warnings.push('cursor.char is empty and will not be visible');
+    } else {
+      errors.push('cursor must be boolean, string, or { char?: string; blink?: boolean }');
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+  };
+}
+
+/**
  * Validate and optionally throw. Logs warnings to console.
  */
 export function validateOrThrow(

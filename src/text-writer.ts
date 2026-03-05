@@ -10,6 +10,7 @@ import { runTypewriter } from './effects.js';
 import { runDecode } from './effects.js';
 import { runGlyphSubstitution } from './effects.js';
 import { prefersReducedMotion, subscribeVisibility } from './engine.js';
+import { validateOrThrow, validateTextWriterOptions } from './validation.js';
 
 const FLICKER_WRITER_FINISHED = 'flicker-writer-finished';
 
@@ -109,6 +110,7 @@ function runWriterEffect(
  * Create a unified text writer controller: write(), queue(), add(), remove(), with pause/resume and a11y.
  */
 export function createTextWriter(element: HTMLElement, options: TextWriterOptions = {}): TextWriterController {
+  validateOrThrow(options as Record<string, unknown>, validateTextWriterOptions, 'TextWriter');
   let opts: TextWriterOptions = { ...options };
   let fullText = '';
   let currentLength = 0;

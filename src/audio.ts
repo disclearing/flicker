@@ -50,6 +50,8 @@ export function createAudioReactiveFlicker(
   let dataArray: Uint8Array | null = null;
   let animationId: number | null = null;
   let flickerController: FlickerController | null = null;
+  let sourceConnected = false;
+  let connecting = false;
   let lastTick = 0;
   let intervalMs = 100;
 
@@ -70,30 +72,56 @@ export function createAudioReactiveFlicker(
   }
 
   async function connectSource() {
+    if (connecting || sourceConnected) {
+      if (audioContext?.state === 'suspended') {
+        try {
+          await audioContext.resume();
+        } catch (err) {
+          opts.onError?.(err instanceof Error ? err : new Error('Failed to resume AudioContext'));
+        }
+      }
+      return;
+    }
+    connecting = true;
     if (typeof window === 'undefined' || !window.AudioContext && !(window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext) {
       opts.onError?.(new Error('AudioContext not supported'));
+      connecting = false;
       return;
     }
-    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    audioContext = new Ctx();
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = opts.fftSize!;
-    analyser.smoothingTimeConstant = opts.smoothingTimeConstant!;
-    dataArray = new Uint8Array(analyser.frequencyBinCount);
+    try {
+      const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      audioContext = new Ctx();
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = opts.fftSize!;
+      analyser.smoothingTimeConstant = opts.smoothingTimeConstant!;
+      dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-    const source = opts.source;
-    if (source instanceof HTMLMediaElement) {
-      const src = audioContext.createMediaElementSource(source);
-      src.connect(analyser);
-      src.connect(audioContext.destination);
-    } else if (source instanceof MediaStream) {
-      const src = audioContext.createMediaStreamSource(source);
-      src.connect(analyser);
-    } else {
-      opts.onError?.(new Error('No audio source provided'));
-      return;
+      const source = opts.source;
+      if (source instanceof HTMLMediaElement) {
+        const src = audioContext.createMediaElementSource(source);
+        src.connect(analyser);
+        src.connect(audioContext.destination);
+      } else if (source instanceof MediaStream) {
+        const src = audioContext.createMediaStreamSource(source);
+        src.connect(analyser);
+      } else {
+        opts.onError?.(new Error('No audio source provided'));
+        return;
+      }
+      sourceConnected = true;
+      tick();
+    } catch (err) {
+      opts.onError?.(err instanceof Error ? err : new Error('Failed to initialize audio-reactive source'));
+      sourceConnected = false;
+      if (audioContext) {
+        void audioContext.close();
+      }
+      audioContext = null;
+      analyser = null;
+      dataArray = null;
+    } finally {
+      connecting = false;
     }
-    tick();
   }
 
   flickerController = createFlicker(element, {
@@ -125,6 +153,8 @@ export function createAudioReactiveFlicker(
       audioContext?.close();
       flickerController?.destroy();
       flickerController = null;
+      sourceConnected = false;
+      connecting = false;
       analyser = null;
       dataArray = null;
     },

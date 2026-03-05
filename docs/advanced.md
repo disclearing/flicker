@@ -45,9 +45,16 @@ import { createAudioReactiveFlicker, isAudioReactiveSupported } from '@discleari
 
 if (!isAudioReactiveSupported()) return;
 const audioEl = document.querySelector('audio');
-const ctrl = createAudioReactiveFlicker(domEl, { source: audioEl });
+const ctrl = createAudioReactiveFlicker(domEl, {
+  source: audioEl,
+  onError: (err) => console.warn('Audio-reactive unavailable', err.message),
+});
 ctrl.start();
 ```
+
+Notes:
+- Browser autoplay/permission policies can block audio analysis until user interaction.
+- When source setup fails (no source, permission denied, unsupported API), `onError` is called.
 
 ## Canvas / WebGL / WebGPU renderers
 
@@ -78,16 +85,31 @@ document.body.appendChild(renderer.canvas);
 
 ### WebGL
 
-WebGL renderer for pass-through or effects when WebGPU is not available. Single-frame only via `createWebGLCanvas`:
+WebGL now supports both continuous rendering (`createWebGLRenderer`) and one-shot snapshots (`createWebGLCanvas`):
 
 ```js
-import { createWebGLCanvas, isWebGLSupported } from '@disclearing/flicker';
+import { createWebGLRenderer, createWebGLCanvas, isWebGLSupported } from '@disclearing/flicker';
 
 if (isWebGLSupported()) {
+  const webgl = createWebGLRenderer(videoEl, {
+    type: 'distortion',
+    autoResize: true,
+    autoPauseOnHidden: true,
+    onContextLost: () => console.warn('WebGL context lost'),
+    onError: (err) => console.warn('WebGL error', err.message),
+  });
+  webgl.start();
+  if (webgl.canvas) document.body.appendChild(webgl.canvas);
+
+  // Optional one-shot frame helper
   const canvas = createWebGLCanvas(videoEl, { type: 'noise', noiseAmount: 0.1 });
   if (canvas) document.body.appendChild(canvas);
 }
 ```
+
+- **Controller**: `start()`, `stop()`, `setOptions()`, `destroy()`, `canvas`, `isRunning`.
+- **Options**: Same effect options as canvas plus `autoResize`, `autoPauseOnHidden`, `onContextLost`, `onError`.
+- **Fallback**: If WebGL is unavailable, `createWebGLRenderer` returns a no-op controller with `canvas: null`.
 
 ### WebGPU
 
@@ -121,10 +143,18 @@ if (isWebGPUSupported()) {
 Validate options before use (e.g. from user input):
 
 ```js
-import { validateFlickerOptions, validateImageSequenceOptions, validateOrThrow } from '@disclearing/flicker';
+import {
+  validateFlickerOptions,
+  validateImageSequenceOptions,
+  validateTextWriterOptions,
+  validateOrThrow,
+} from '@disclearing/flicker';
 
 const result = validateFlickerOptions({ interval: -1 });
 if (!result.valid) console.error(result.errors);
+
+const writer = validateTextWriterOptions({ mode: 'decode', decodeDuration: -5 });
+if (!writer.valid) console.error(writer.errors);
 
 validateOrThrow(userOptions, validateFlickerOptions, 'Flicker');
 ```
@@ -140,6 +170,7 @@ validateOrThrow(userOptions, validateFlickerOptions, 'Flicker');
 - `preloadImage(url, { retries, backoffMs })` — retry/backoff.
 - `configurePreloader({ maxCacheSize, evictionStrategy })` — cache limits.
 - `evictStale(maxAgeMs)` — evict old entries.
+- Invalid numeric preloader values are clamped to safe defaults (e.g. retries >= 0, concurrency >= 1, cache size >= 1).
 
 ## Controllers summary
 
