@@ -164,32 +164,21 @@ ctrl.start();
 
 ## Canvas / WebGL / WebGPU renderers
 
-Use canvas for noise, scanline, or distortion effects (with fallback when unsupported):
+Canvas, WebGL, and WebGPU renderers apply noise, scanline, or distortion to a source image/video. Canvas auto-resizes with the source, pauses when the tab is hidden (`autoPauseOnHidden`), and supports `scale` and `throttleFps` for performance. WebGPU supports `ready()` promise, `autoResize`, and `onDeviceLost`. See [docs/advanced.md](./docs/advanced.md#canvas--webgl--webgpu-renderers).
 
 ```js
-import { createCanvasRenderer, isCanvasSupported } from '@disclearing/flicker';
+import { createCanvasRenderer, createWebGPURenderer, isCanvasSupported, isWebGPUSupported } from '@disclearing/flicker';
 
 if (!isCanvasSupported()) return;
 const renderer = createCanvasRenderer(videoEl, { type: 'scanline', scanlineSpacing: 4 });
 renderer.start();
 document.body.appendChild(renderer.canvas);
-```
-
-Use WebGPU when available (with graceful no-op fallback if unsupported):
-
-```js
-import { createWebGPURenderer, isWebGPUSupported } from '@disclearing/flicker';
 
 if (isWebGPUSupported()) {
-  const gpuRenderer = createWebGPURenderer(videoEl, {
-    type: 'noise',
-    noiseAmount: 0.12,
-    scanlineOpacity: 0.1,
-  });
-  gpuRenderer.start();
-  if (gpuRenderer.canvas) {
-    document.body.appendChild(gpuRenderer.canvas);
-  }
+  const gpu = createWebGPURenderer(videoEl, { type: 'noise', noiseAmount: 0.12 });
+  await gpu.ready();
+  gpu.start();
+  if (gpu.canvas) document.body.appendChild(gpu.canvas);
 }
 ```
 

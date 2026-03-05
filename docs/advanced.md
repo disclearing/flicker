@@ -51,32 +51,70 @@ ctrl.start();
 
 ## Canvas / WebGL / WebGPU renderers
 
-Use canvas for noise, scanline, or distortion overlays (e.g. on video):
+All three renderers support the same effect types: `noise`, `scanline`, `distortion`, and `none`. They draw a source image or video to a canvas with optional effects.
+
+### Canvas 2D
+
+Use when WebGL/WebGPU are unavailable or you want a simple fallback. The canvas renderer resizes with the source, pauses when the tab is hidden (optional), and supports performance options:
 
 ```js
 import { createCanvasRenderer, isCanvasSupported } from '@disclearing/flicker';
 
 if (!isCanvasSupported()) return;
-const renderer = createCanvasRenderer(videoEl, { type: 'scanline', scanlineSpacing: 4 });
+const renderer = createCanvasRenderer(videoEl, {
+  type: 'scanline',
+  scanlineSpacing: 4,
+  scanlineOpacity: 0.15,
+  autoPauseOnHidden: true,  // default: pause when tab hidden
+  scale: 0.5,               // optional: render at half size for CPU savings
+  throttleFps: 30,         // optional: cap FPS (omit for full RAF)
+});
 renderer.start();
 document.body.appendChild(renderer.canvas);
 ```
 
-WebGPU when available:
+- **Options**: `type`, `noiseAmount`, `scanlineSpacing`, `scanlineOpacity`, `distortionAmount`, `scale` (0.1–1), `throttleFps`, `autoPauseOnHidden`.
+- **One-shot**: `createEffectCanvas(source, options)` or `renderFrame(source, options)` for a single frame.
+
+### WebGL
+
+WebGL renderer for pass-through or effects when WebGPU is not available. Single-frame only via `createWebGLCanvas`:
 
 ```js
-import { createWebGPURenderer, isWebGPUSupported } from '@disclearing/flicker';
+import { createWebGLCanvas, isWebGLSupported } from '@disclearing/flicker';
+
+if (isWebGLSupported()) {
+  const canvas = createWebGLCanvas(videoEl, { type: 'noise', noiseAmount: 0.1 });
+  if (canvas) document.body.appendChild(canvas);
+}
+```
+
+### WebGPU
+
+Best performance when available. Supports continuous loop, auto-resize when source dimensions change, and device-lost handling:
+
+```js
+import { createWebGPURenderer, createWebGPUCanvas, isWebGPUSupported } from '@disclearing/flicker';
 
 if (isWebGPUSupported()) {
   const gpuRenderer = createWebGPURenderer(videoEl, {
     type: 'noise',
     noiseAmount: 0.12,
     scanlineOpacity: 0.1,
+    autoResize: true,       // default: resize canvas/texture when video size changes
+    onDeviceLost: (info) => console.warn('WebGPU device lost', info),
   });
   gpuRenderer.start();
   if (gpuRenderer.canvas) document.body.appendChild(gpuRenderer.canvas);
+
+  // Or use the async helper: wait for init, then get canvas
+  const canvas = await createWebGPUCanvas(videoEl, { type: 'scanline' });
+  if (canvas) document.body.appendChild(canvas);
 }
 ```
+
+- **Controller**: `start()`, `stop()`, `setOptions()`, `destroy()`, `ready(): Promise<boolean>` (resolve when init complete), `canvas`, `isInitialized`.
+- **Options**: Same as canvas plus `powerPreference`, `autoResize`, `onDeviceLost`.
 
 ## Validation
 

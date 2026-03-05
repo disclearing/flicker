@@ -10,12 +10,18 @@ type WebGPUPowerPreference = 'low-power' | 'high-performance';
 export interface WebGPURendererOptions extends CanvasEffectOptions {
   /** Preferred power profile for adapter selection. */
   powerPreference?: WebGPUPowerPreference;
+  /** Recreate textures/canvas size when source dimensions change. Default: true. */
+  autoResize?: boolean;
+  /** Called when GPU device is lost. */
+  onDeviceLost?: (info: unknown) => void;
 }
 
 export interface WebGPURendererController {
   start(): void;
   stop(): void;
   setOptions(options: Partial<WebGPURendererOptions>): void;
+  /** Resolve when initialization is complete (true on success). */
+  ready(): Promise<boolean>;
   destroy(): void;
   readonly canvas: HTMLCanvasElement | null;
   readonly isInitialized: boolean;
@@ -130,16 +136,21 @@ export function createWebGPURenderer(
 ): WebGPURendererController {
   let canvas: HTMLCanvasElement | null = null;
   let rafId: number | null = null;
+  let running = false;
   let destroyed = false;
   let initialized = false;
+  let initializing = false;
+  let readyPromise: Promise<boolean> | null = null;
   let currentOptions: WebGPURendererOptions = { ...options };
   currentOptions.type = currentOptions.type ?? 'none';
   currentOptions.noiseAmount = currentOptions.noiseAmount ?? 0.1;
   currentOptions.scanlineSpacing = currentOptions.scanlineSpacing ?? 4;
   currentOptions.scanlineOpacity = currentOptions.scanlineOpacity ?? 0.15;
   currentOptions.distortionAmount = currentOptions.distortionAmount ?? 2;
+  currentOptions.autoResize = currentOptions.autoResize ?? true;
 
   let device: any = null;
+  let adapter: any = null;
   let context: any = null;
   let pipeline: any = null;
   let sampler: any = null;
@@ -147,38 +158,137 @@ export function createWebGPURenderer(
   let sourceTexture: any = null;
   let bindGroup: any = null;
   let format = 'bgra8unorm';
+  let textureWidth = 0;
+  let textureHeight = 0;
   const startedAt = performance.now();
+
+  function resetGpuResources(clearCanvas: boolean): void {
+    try {
+      sourceTexture?.destroy?.();
+    } catch {
+      // ignore
+    }
+    bindGroup = null;
+    sourceTexture = null;
+    textureWidth = 0;
+    textureHeight = 0;
+    uniformBuffer = null;
+    sampler = null;
+    pipeline = null;
+    context = null;
+    device = null;
+    adapter = null;
+    initialized = false;
+    if (clearCanvas) {
+      canvas?.remove();
+      canvas = null;
+    }
+  }
+
+  function getWebGPUUsage(): { texture: any; buffer: any } | null {
+    const usage = globalThis as unknown as {
+      GPUTextureUsage?: any;
+      GPUBufferUsage?: any;
+    };
+    if (!usage.GPUTextureUsage || !usage.GPUBufferUsage) return null;
+    return {
+      texture: usage.GPUTextureUsage,
+      buffer: usage.GPUBufferUsage,
+    };
+  }
+
+  function configureContextForSize(width: number, height: number): boolean {
+    if (!canvas || !context || !device) return false;
+    if (!width || !height) return false;
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+    context.configure({
+      device,
+      format,
+      alphaMode: 'premultiplied',
+    });
+    return true;
+  }
+
+  function recreateTextureAndBindGroup(width: number, height: number): boolean {
+    if (!device || !pipeline || !sampler || !uniformBuffer) return false;
+    const usage = getWebGPUUsage();
+    if (!usage) return false;
+    try {
+      sourceTexture?.destroy?.();
+    } catch {
+      // ignore
+    }
+    sourceTexture = device.createTexture({
+      size: [width, height, 1],
+      format: 'rgba8unorm',
+      usage: usage.texture.TEXTURE_BINDING | usage.texture.COPY_DST | usage.texture.RENDER_ATTACHMENT,
+    });
+    bindGroup = device.createBindGroup({
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: sampler },
+        { binding: 1, resource: sourceTexture.createView() },
+        { binding: 2, resource: { buffer: uniformBuffer } },
+      ],
+    });
+    textureWidth = width;
+    textureHeight = height;
+    return true;
+  }
+
+  function ensureSizedToSource(): boolean {
+    if (!initialized || !canvas || !context || !device) return false;
+    const size = getSourceSize(source);
+    if (!size.width || !size.height) return false;
+    if (!configureContextForSize(size.width, size.height)) return false;
+    if (textureWidth !== size.width || textureHeight !== size.height) {
+      return recreateTextureAndBindGroup(size.width, size.height);
+    }
+    return true;
+  }
 
   async function init(): Promise<boolean> {
     if (initialized || destroyed) return initialized;
-    if (!isWebGPUSupported()) return false;
-    const size = getSourceSize(source);
-    if (!size.width || !size.height) return false;
+    if (initializing && readyPromise) return readyPromise;
 
-    try {
+    initializing = true;
+    readyPromise = (async () => {
+      if (!isWebGPUSupported()) return false;
+      const size = getSourceSize(source);
+      if (!size.width || !size.height) return false;
+      const usage = getWebGPUUsage();
+      if (!usage) return false;
+
+      if (!canvas) canvas = document.createElement('canvas');
       const navGpu = (navigator as unknown as { gpu: any }).gpu;
-      const adapter = await navGpu.requestAdapter({
-        powerPreference: currentOptions.powerPreference ?? 'high-performance',
-      });
+      if (!adapter) {
+        adapter = await navGpu.requestAdapter({
+          powerPreference: currentOptions.powerPreference ?? 'high-performance',
+        });
+      }
       if (!adapter) return false;
-      device = await adapter.requestDevice();
 
-      canvas = document.createElement('canvas');
-      canvas.width = size.width;
-      canvas.height = size.height;
+      device = await adapter.requestDevice();
+      device.lost?.then((info: unknown) => {
+        if (destroyed) return;
+        running = false;
+        if (rafId != null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        resetGpuResources(false);
+        currentOptions.onDeviceLost?.(info);
+      });
 
       context = canvas.getContext('webgpu');
       if (!context) return false;
-
       if (typeof navGpu.getPreferredCanvasFormat === 'function') {
         format = navGpu.getPreferredCanvasFormat();
       }
-
-      context.configure({
-        device,
-        format,
-        alphaMode: 'premultiplied',
-      });
+      if (!configureContextForSize(size.width, size.height)) return false;
 
       const shaderModule = device.createShaderModule({ code: WGSL_SHADER });
       pipeline = device.createRenderPipeline({
@@ -197,82 +307,75 @@ export function createWebGPURenderer(
         minFilter: 'linear',
       });
 
-      sourceTexture = device.createTexture({
-        size: [canvas.width, canvas.height, 1],
-        format: 'rgba8unorm',
-        usage:
-          (globalThis as any).GPUTextureUsage.TEXTURE_BINDING |
-          (globalThis as any).GPUTextureUsage.COPY_DST |
-          (globalThis as any).GPUTextureUsage.RENDER_ATTACHMENT,
-      });
-
       uniformBuffer = device.createBuffer({
         size: 8 * 4,
-        usage:
-          (globalThis as any).GPUBufferUsage.UNIFORM |
-          (globalThis as any).GPUBufferUsage.COPY_DST,
+        usage: usage.buffer.UNIFORM | usage.buffer.COPY_DST,
       });
 
-      bindGroup = device.createBindGroup({
-        layout: pipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: sampler },
-          { binding: 1, resource: sourceTexture.createView() },
-          { binding: 2, resource: { buffer: uniformBuffer } },
-        ],
-      });
+      if (!recreateTextureAndBindGroup(size.width, size.height)) return false;
 
       initialized = true;
       return true;
-    } catch {
-      initialized = false;
-      return false;
-    }
+    })()
+      .catch(() => false)
+      .finally(() => {
+        initializing = false;
+      });
+
+    return readyPromise;
   }
 
   function frame(): void {
     if (!initialized || !canvas || !device || !context || !pipeline || !sourceTexture || !uniformBuffer || !bindGroup) {
       return;
     }
-    const elapsed = (performance.now() - startedAt) / 1000;
-    const params = new Float32Array([
-      effectTypeToNumber(currentOptions.type),
-      currentOptions.noiseAmount ?? 0.1,
-      currentOptions.scanlineSpacing ?? 4,
-      currentOptions.distortionAmount ?? 2,
-      elapsed,
-      canvas.width,
-      canvas.height,
-      currentOptions.scanlineOpacity ?? 0.15,
-    ]);
-    device.queue.writeBuffer(uniformBuffer, 0, params.buffer);
+    if ((currentOptions.autoResize ?? true) && !ensureSizedToSource()) {
+      return;
+    }
+    try {
+      const elapsed = (performance.now() - startedAt) / 1000;
+      const params = new Float32Array([
+        effectTypeToNumber(currentOptions.type),
+        currentOptions.noiseAmount ?? 0.1,
+        currentOptions.scanlineSpacing ?? 4,
+        currentOptions.distortionAmount ?? 2,
+        elapsed,
+        canvas.width,
+        canvas.height,
+        currentOptions.scanlineOpacity ?? 0.15,
+      ]);
+      device.queue.writeBuffer(uniformBuffer, 0, params.buffer);
 
-    device.queue.copyExternalImageToTexture(
-      { source },
-      { texture: sourceTexture },
-      [canvas.width, canvas.height]
-    );
+      device.queue.copyExternalImageToTexture(
+        { source },
+        { texture: sourceTexture },
+        [canvas.width, canvas.height]
+      );
 
-    const encoder = device.createCommandEncoder();
-    const renderPass = encoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view: context.getCurrentTexture().createView(),
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
-          loadOp: 'clear',
-          storeOp: 'store',
-        },
-      ],
-    });
-    renderPass.setPipeline(pipeline);
-    renderPass.setBindGroup(0, bindGroup);
-    renderPass.draw(6, 1, 0, 0);
-    renderPass.end();
-    device.queue.submit([encoder.finish()]);
+      const encoder = device.createCommandEncoder();
+      const renderPass = encoder.beginRenderPass({
+        colorAttachments: [
+          {
+            view: context.getCurrentTexture().createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            loadOp: 'clear',
+            storeOp: 'store',
+          },
+        ],
+      });
+      renderPass.setPipeline(pipeline);
+      renderPass.setBindGroup(0, bindGroup);
+      renderPass.draw(6, 1, 0, 0);
+      renderPass.end();
+      device.queue.submit([encoder.finish()]);
+    } catch {
+      // Source may not be ready this frame (e.g. video metadata not loaded yet).
+      // Keep loop alive and retry next frame.
+    }
   }
 
   function loop(): void {
-    if (destroyed) return;
+    if (destroyed || !running) return;
     frame();
     rafId = requestAnimationFrame(loop);
   }
@@ -287,15 +390,21 @@ export function createWebGPURenderer(
     setOptions(next) {
       currentOptions = { ...currentOptions, ...next };
     },
+    ready() {
+      return init();
+    },
     start() {
       if (destroyed) return;
+      if (running) return;
+      running = true;
       if (rafId != null) return;
-      void init().then((ok) => {
-        if (!ok || destroyed) return;
+      void controller.ready().then((ok) => {
+        if (!ok || destroyed || !running) return;
         rafId = requestAnimationFrame(loop);
       });
     },
     stop() {
+      running = false;
       if (rafId != null) {
         cancelAnimationFrame(rafId);
         rafId = null;
@@ -305,21 +414,7 @@ export function createWebGPURenderer(
       if (destroyed) return;
       destroyed = true;
       controller.stop();
-      try {
-        if (sourceTexture) sourceTexture.destroy?.();
-      } catch {
-        // ignore
-      }
-      canvas?.remove();
-      canvas = null;
-      initialized = false;
-      bindGroup = null;
-      uniformBuffer = null;
-      sampler = null;
-      pipeline = null;
-      context = null;
-      device = null;
-      sourceTexture = null;
+      resetGpuResources(true);
     },
   };
 
@@ -335,8 +430,13 @@ export async function createWebGPUCanvas(
   options: WebGPURendererOptions = { type: 'none' }
 ): Promise<HTMLCanvasElement | null> {
   const renderer = createWebGPURenderer(source, options);
+  const ok = await renderer.ready();
+  if (!ok) {
+    renderer.destroy();
+    return null;
+  }
   renderer.start();
-  // Wait a frame so async init can complete.
+  // Wait a frame so the first render pass can submit.
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   return renderer.canvas;
 }
