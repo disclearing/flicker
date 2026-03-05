@@ -5,8 +5,10 @@
 
 import { createFlicker } from '../flicker.js';
 import { createImageSequence } from '../image-sequence.js';
+import { createTextWriter } from '../text-writer.js';
 import type { FlickerOptions, FlickerController } from '../types.js';
 import type { ImageSequenceOptions, ImageSequenceController } from '../types.js';
+import type { TextWriterOptions, TextWriterController } from '../types.js';
 
 /**
  * Svelte action: use:flicker={{ options }} to run flicker on the node.
@@ -65,4 +67,37 @@ export function createImageSequenceController(
   options: ImageSequenceOptions
 ): ImageSequenceController {
   return createImageSequence(element, options);
+}
+
+/**
+ * Svelte action: use:textWriter={options} to bind a text writer to the node.
+ * Returns { controller, update, destroy }; controller is the writer API (write, queue, etc.).
+ */
+export function textWriter(
+  node: HTMLElement,
+  options: TextWriterOptions = {}
+): { destroy?: () => void; update?: (opts: TextWriterOptions) => void; controller: TextWriterController } {
+  let ctrl = createTextWriter(node, options);
+  const result: { destroy?: () => void; update?: (opts: TextWriterOptions) => void; controller: TextWriterController } = {
+    controller: ctrl,
+    update(opts: TextWriterOptions) {
+      ctrl.destroy();
+      ctrl = createTextWriter(node, opts);
+      result.controller = ctrl;
+    },
+    destroy() {
+      ctrl.destroy();
+    },
+  };
+  return result;
+}
+
+/**
+ * Create a text writer controller for use in Svelte (e.g. in onMount).
+ */
+export function createTextWriterController(
+  element: HTMLElement,
+  options: TextWriterOptions = {}
+): TextWriterController {
+  return createTextWriter(element, options);
 }

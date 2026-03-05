@@ -92,9 +92,9 @@ writer.destroy();
 
 - **Custom event**: When a write completes, the element dispatches `flicker-writer-finished` with `detail: { text, length }` so you can listen without callbacks.
 - **Modes**: `'scramble'` (reveal from random glyphs), `'typewriter'` (character-by-character, optional human-like variance and punctuation pause), `'decode'` (each char resolves from random to final), `'glyph-sub'` (continuous substitution).
-- **Options**: `glyphPool`, `interval`, `minInterval`/`maxInterval`, `humanLike`, `pauseOnSpaces`, `punctuationPauseMs`, `cursor: true | '|'` (typing cursor for typewriter/decode), `html: 'strip' | 'preserve'`, `letterize: 'in-place' | 'fragment'`, `onStep(index, char, isComplete)`, `onComplete`, plus engine and a11y options.
+- **Options**: `glyphPool`, `interval`, `minInterval`/`maxInterval`, `humanLike`, `pauseOnSpaces`, `punctuationPauseMs`, `cursor: true | '|' | { char, blink }` (typing cursor; use `blink: true` for blinking), `seed` (number for deterministic animations), `html: 'strip' | 'preserve'` (preserve tags when writing e.g. `writer.write('<b>Hi</b>')`), `letterize: 'in-place' | 'fragment'`, `onStep`, `onComplete`, plus engine and a11y options.
 - **Events**: `writer.on('start' | 'step' | 'complete' | 'destroy' | 'visibilitychange', fn)` and `writer.off(event, fn)` for multiple listeners.
-- **Helpers**: `decodeEntities()`, `letterizeToFragment()`, `setLetterizedContent()` for custom flows; `runDecode()` for one-shot decode effect.
+- **Helpers**: `decodeEntities()`, `letterizeToFragment()`, `setLetterizedContent()`, `setLetterizedContentFromHtml()` (parse HTML string and letterize only text nodes), `createSeededRandom(seed)` for deterministic RNG; `runDecode()` for one-shot decode effect.
 
 ## Plugins
 
@@ -215,6 +215,29 @@ function WriterDemo() {
 }
 ```
 
+**Vue 3 – text writer** (composable or directive):
+
+```js
+import { useTextWriter, textWriterDirective, unmountTextWriterDirective } from '@disclearing/flicker/vue';
+
+// Composable: get write, queue, writeAsync, endless, etc.
+const { controller, write, writeAsync } = useTextWriter(elementRef, { mode: 'scramble', cursor: { blink: true } });
+onMounted(() => write('Hello'));
+// Or directive: v-text-writer="options" then use ref to call writer methods
+app.directive('text-writer', { mounted: textWriterDirective, unmounted: unmountTextWriterDirective });
+```
+
+**Svelte – text writer** (action):
+
+```svelte
+<script>
+  import { textWriter } from '@disclearing/flicker/svelte';
+  let writerOpts = { mode: 'typewriter', cursor: { char: '|', blink: true } };
+</script>
+<div use:textWriter={writerOpts} bind:this={el}></div>
+<!-- Or get controller from action return: const result = textWriter(node, opts); result.controller.write('Hi'); -->
+```
+
 **Vue 3** (optional):
 
 ```js
@@ -294,7 +317,32 @@ validateOrThrow(userOptions, validateFlickerOptions, 'Flicker');
 
 - **CSS filters**: `applyFilters(el, { blur, contrast, hueRotate, saturate, chromaticAberration, rgbSplit })`; use `filters` in flicker options for the "off" phase.
 - **Text**: `preparePerCharFlicker(container)`, `runScrambleReveal(container, options)`, `runGlyphSubstitution(container, options)`, `runTypewriter(container, options)`, `runDecode(container, options)` (decode/decrypt: each char resolves from random glyphs). Options support `onStep(index, char, isComplete)` and `startFromIndex` for writer add(). Container gets `data-flicker-state="writing"` and class `flicker-writing` during animation; spans get `data-flicker-char-index`.
-- **HTML/entities**: `decodeEntities(str)`, `letterizeToFragment(text)`, `setLetterizedContent(container, text)`. Use `html: 'strip' | 'preserve'` and `decodeEntitiesIn` in effect options.
+- **HTML/entities**: `decodeEntities(str)`, `letterizeToFragment(text)`, `setLetterizedContent(container, text)`, `setLetterizedContentFromHtml(container, htmlString)`. Use `html: 'strip' | 'preserve'` and `decodeEntitiesIn` in effect options.
+
+## Examples
+
+**Blinking cursor** (use `cursor: { char: '|', blink: true }` and add CSS):
+
+```css
+.flicker-cursor-blink {
+  animation: flicker-cursor-blink 0.8s step-end infinite;
+}
+@keyframes flicker-cursor-blink {
+  50% { opacity: 0; }
+}
+```
+
+**HTML with preserved tags** (e.g. `<b>bold</b>` stays bold):
+
+```js
+createTextWriter(el, { html: 'preserve' }).write('<b>Hello</b> <i>world</i>');
+```
+
+**Deterministic animation** (same seed = same pattern; useful for tests or replay):
+
+```js
+createTextWriter(el, { mode: 'scramble', seed: 42 }).write('Reproducible glitch');
+```
 
 ## Controllers (summary)
 

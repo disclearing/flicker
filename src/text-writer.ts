@@ -4,8 +4,7 @@
  */
 
 import type { TextWriterOptions, TextWriterController, TextWriterEventName, WriterMode } from './types.js';
-import { decodeEntities } from './effects.js';
-import { setLetterizedContent } from './effects.js';
+import { decodeEntities, createSeededRandom, setLetterizedContent, setLetterizedContentFromHtml } from './effects.js';
 import { runScrambleReveal } from './effects.js';
 import { runTypewriter } from './effects.js';
 import { runDecode } from './effects.js';
@@ -22,6 +21,7 @@ function runWriterEffect(
   opts: TextWriterOptions,
   decodeEntitiesIn: string,
   startFromIndex: number,
+  useHtmlContent: boolean,
   onComplete: () => void
 ): () => void {
   const interval = opts.interval ?? 80;
@@ -30,54 +30,61 @@ function runWriterEffect(
   const minInterval = opts.minInterval ?? interval * 0.7;
   const maxInterval = opts.maxInterval ?? interval * 1.5;
   const reduced = (opts.respectReducedMotion !== false) && prefersReducedMotion();
+  const random = opts.seed != null ? createSeededRandom(opts.seed) : undefined;
 
-  const cursorOpt = opts.cursor === true ? true : (typeof opts.cursor === 'string' ? opts.cursor : undefined);
+  const cursorOpt = opts.cursor;
   const stepCb = (index: number, char: string, isComplete: boolean) => {
     opts.onStep?.(index, char, isComplete);
   };
 
   if (reduced) {
-    setLetterizedContent(element, decodeEntitiesIn);
+    if (useHtmlContent) setLetterizedContentFromHtml(element, decodeEntitiesIn);
+    else setLetterizedContent(element, decodeEntitiesIn);
     for (let i = 0; i <= decodeEntitiesIn.length; i++) opts.onStep?.(i, i < decodeEntitiesIn.length ? decodeEntitiesIn[i]! : '', i === decodeEntitiesIn.length);
     onComplete();
     return () => {};
   }
 
+  const effectOpts = {
+    random,
+    onComplete,
+    onStep: stepCb,
+    cursor: cursorOpt,
+  };
+
   if (mode === 'scramble') {
     return runScrambleReveal(element, {
+      ...effectOpts,
       interval,
       glyphPool: pool,
-      decodeEntitiesIn: startFromIndex === 0 ? decodeEntitiesIn : undefined,
+      decodeEntitiesIn: !useHtmlContent && startFromIndex === 0 ? decodeEntitiesIn : undefined,
       startFromIndex: startFromIndex > 0 ? startFromIndex : undefined,
-      onComplete,
-      onStep: stepCb,
+      existingLetterized: useHtmlContent,
     });
   }
   if (mode === 'typewriter') {
     return runTypewriter(element, {
+      ...effectOpts,
       interval,
       minInterval: humanLike ? minInterval : undefined,
       maxInterval: humanLike ? maxInterval : undefined,
       humanLike,
       pauseOnSpaces: opts.pauseOnSpaces,
       punctuationPauseMs: opts.punctuationPauseMs,
-      decodeEntitiesIn: startFromIndex === 0 ? decodeEntitiesIn : undefined,
+      decodeEntitiesIn: !useHtmlContent && startFromIndex === 0 ? decodeEntitiesIn : undefined,
       startFromIndex: startFromIndex > 0 ? startFromIndex : undefined,
-      cursor: cursorOpt,
-      onComplete,
-      onStep: stepCb,
+      existingLetterized: useHtmlContent,
     });
   }
   if (mode === 'decode') {
     return runDecode(element, {
+      ...effectOpts,
       interval,
       decodeDuration: opts.decodeDuration ?? 60,
       glyphPool: pool,
-      decodeEntitiesIn: startFromIndex === 0 ? decodeEntitiesIn : undefined,
+      decodeEntitiesIn: !useHtmlContent && startFromIndex === 0 ? decodeEntitiesIn : undefined,
       startFromIndex: startFromIndex > 0 ? startFromIndex : undefined,
-      cursor: cursorOpt,
-      onComplete,
-      onStep: stepCb,
+      existingLetterized: useHtmlContent,
     });
   }
   // glyph-sub: continuous substitution; run for a duration then call onComplete
@@ -86,6 +93,7 @@ function runWriterEffect(
     glyphPool: pool,
     probability: 0.3,
     decodeEntitiesIn,
+    random,
   });
   const t = setTimeout(() => {
     stopGlyph();
@@ -157,7 +165,9 @@ export function createTextWriter(element: HTMLElement, options: TextWriterOption
   };
 
   const startCurrentEffect = (text: string, fromIndex: number, onComplete: () => void) => {
-    if (fromIndex > 0) setLetterizedContent(element, text);
+    const useHtmlContent = fromIndex === 0 && opts.html === 'preserve' && text.includes('<');
+    if (useHtmlContent) setLetterizedContentFromHtml(element, text);
+    else if (fromIndex > 0) setLetterizedContent(element, text);
     cancelCurrent?.();
     const mergedOpts: TextWriterOptions = {
       ...opts,
@@ -172,6 +182,7 @@ export function createTextWriter(element: HTMLElement, options: TextWriterOption
       mergedOpts,
       text,
       fromIndex,
+      useHtmlContent,
       onComplete
     );
   };

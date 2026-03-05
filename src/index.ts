@@ -83,6 +83,8 @@ export {
   decodeEntities,
   letterizeToFragment,
   setLetterizedContent,
+  setLetterizedContentFromHtml,
+  createSeededRandom,
   randomChar,
 } from './effects.js';
 export type {

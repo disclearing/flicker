@@ -320,8 +320,10 @@ export interface TextWriterOptions {
   onDestroy?: () => void;
   /** Callback when tab visibility changes. */
   onVisibilityChange?: (visible: boolean) => void;
-  /** Show a typing cursor during typewriter/decode. true = '|', or pass character string. */
-  cursor?: boolean | string;
+  /** Show a typing cursor during typewriter/decode. true = '|', or pass character, or { char, blink }. */
+  cursor?: boolean | string | { char?: string; blink?: boolean };
+  /** Optional seed for deterministic animations (same seed = same pattern). */
+  seed?: number;
 }
 
 /** Writer event names for on/off. */
