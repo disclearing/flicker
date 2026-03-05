@@ -119,8 +119,8 @@ export function validateTextWriterOptions(options: Record<string, unknown>): Val
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  if (options.mode != null && !['scramble', 'typewriter', 'decode', 'glyph'].includes(String(options.mode))) {
-    errors.push('mode must be one of: scramble, typewriter, decode, glyph');
+  if (options.mode != null && !['scramble', 'typewriter', 'decode', 'glyph-sub'].includes(String(options.mode))) {
+    errors.push('mode must be one of: scramble, typewriter, decode, glyph-sub');
   }
   if (options.html != null && !['strip', 'preserve'].includes(String(options.html))) {
     errors.push('html must be one of: strip, preserve');

@@ -41,14 +41,16 @@ export function createTimeline(steps: TimelineStep[], options: TimelineOptions =
   let currentStepIndex = 0;
   let running = false;
   let cancelled = false;
+  let runToken = 0;
   let flickerController: FlickerController | null = null;
+  const activeSequenceControllers = new Set<ImageSequenceController>();
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-  async function runStep(index: number): Promise<void> {
-    if (cancelled || !running || index >= steps.length) {
+  async function runStep(index: number, token: number): Promise<void> {
+    if (token !== runToken || cancelled || !running || index >= steps.length) {
       if (running && index >= steps.length && opts.loop) {
         currentStepIndex = 0;
-        void runStep(0);
+        void runStep(0, token);
       } else if (index >= steps.length) {
         running = false;
         opts.onComplete?.();
@@ -65,6 +67,10 @@ export function createTimeline(steps: TimelineStep[], options: TimelineOptions =
       await new Promise<void>((resolve) => {
         timeoutId = setTimeout(() => {
           timeoutId = null;
+          if (token !== runToken || cancelled || !running) {
+            resolve();
+            return;
+          }
           flickerController?.stop();
           flickerController = null;
           opts.onStepEnd?.(index);
@@ -75,21 +81,32 @@ export function createTimeline(steps: TimelineStep[], options: TimelineOptions =
       await new Promise<void>((resolve) => {
         timeoutId = setTimeout(() => {
           timeoutId = null;
+          if (token !== runToken || cancelled || !running) {
+            resolve();
+            return;
+          }
           opts.onStepEnd?.(index);
           resolve();
         }, step.duration);
       });
     } else if (step.type === 'callback') {
       await Promise.resolve(step.fn());
+      if (token !== runToken || cancelled || !running) return;
       opts.onStepEnd?.(index);
     } else if (step.type === 'sequence') {
+      activeSequenceControllers.add(step.controller);
       step.controller.start();
       const duration = step.duration ?? 0;
       if (duration > 0) {
         await new Promise<void>((resolve) => {
           timeoutId = setTimeout(() => {
             timeoutId = null;
+            if (token !== runToken || cancelled || !running) {
+              resolve();
+              return;
+            }
             step.controller.stop();
+            activeSequenceControllers.delete(step.controller);
             opts.onStepEnd?.(index);
             resolve();
           }, duration);
@@ -99,11 +116,12 @@ export function createTimeline(steps: TimelineStep[], options: TimelineOptions =
       }
     } else if (step.type === 'custom') {
       await step.run();
+      if (token !== runToken || cancelled || !running) return;
       opts.onStepEnd?.(index);
     }
 
-    if (cancelled || !running) return;
-    void runStep(index + 1);
+    if (token !== runToken || cancelled || !running) return;
+    void runStep(index + 1, token);
   }
 
   const controller: TimelineController = {
@@ -117,17 +135,21 @@ export function createTimeline(steps: TimelineStep[], options: TimelineOptions =
       if (running) return;
       running = true;
       cancelled = false;
-      void runStep(0);
+      runToken++;
+      void runStep(0, runToken);
     },
     stop() {
       running = false;
       cancelled = true;
+      runToken++;
       if (timeoutId != null) {
         clearTimeout(timeoutId);
         timeoutId = null;
       }
       flickerController?.stop();
       flickerController = null;
+      activeSequenceControllers.forEach((controller) => controller.stop());
+      activeSequenceControllers.clear();
       opts.onComplete?.();
     },
     destroy() {

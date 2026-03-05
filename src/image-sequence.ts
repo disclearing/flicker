@@ -309,6 +309,7 @@ export function imageSequence(
   selector: string,
   options: ImageSequenceOptions
 ): ImageSequenceController | null {
+  if (typeof document === 'undefined') return null;
   const el = document.querySelector<HTMLImageElement>(selector);
   if (!el || el.tagName !== 'IMG') return null;
   return createImageSequence(el, options);
@@ -322,6 +323,7 @@ export function imageSequenceAll(
   selector: string,
   options: ImageSequenceOptions
 ): ImageSequenceController[] {
+  if (typeof document === 'undefined') return [];
   const elements = document.querySelectorAll<HTMLImageElement>(selector);
   return Array.from(elements).map((el) => createImageSequence(el, options));
 }

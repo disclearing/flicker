@@ -57,7 +57,6 @@ export function createFlicker(
     if (!running || pausedByVisibility) return;
     if (reducedMotionActive) {
       applyVisible(element, true, opts);
-      opts.onStop?.();
       running = false;
       cancelSchedule?.();
       return;
@@ -125,7 +124,6 @@ export function createFlicker(
       }
       if (reducedMotionActive) {
         applyVisible(element, true, opts);
-        opts.onStop?.();
         running = false;
         return;
       }

@@ -197,12 +197,18 @@ export async function preloadAhead(
   ahead: number,
   loop = true
 ): Promise<HTMLImageElement[]> {
+  if (urls.length === 0 || ahead <= 0) return [];
+
+  const length = urls.length;
+  const normalizeIndex = (index: number) => ((index % length) + length) % length;
   const toLoad: string[] = [];
   for (let i = 0; i < ahead; i++) {
     let index = startIndex + i;
-    if (loop) index = index % urls.length;
-    else if (index >= urls.length) break;
-    toLoad.push(urls[index]);
+    if (loop) index = normalizeIndex(index);
+    else if (index >= length) break;
+    else if (index < 0) continue;
+    const nextUrl = urls[index];
+    if (nextUrl) toLoad.push(nextUrl);
   }
   return preloadImages(toLoad);
 }

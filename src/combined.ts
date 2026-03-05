@@ -16,6 +16,7 @@ export function createCombinedFlicker(
   options: CombinedFlickerOptions
 ): CombinedFlickerController {
   let visible = true;
+  let sequenceOnChange = options.sequence.onChange;
   const originalFlickerOnTick = options.flicker.onTick;
   const flickerController = createFlicker(element, {
     ...options.flicker,
@@ -29,15 +30,14 @@ export function createCombinedFlicker(
   let running = false;
   let paused = false;
 
-  // Override the onChange to restart flicker for transition effects
-  const originalOnChange = options.sequence.onChange;
-  const wrappedOnChange: typeof originalOnChange = (index, total, url) => {
+  // Keep this wrapper installed so sequence updates never drop the burst behavior.
+  const wrappedOnChange = (index: number, total: number, url: string) => {
     // Brief flicker burst on image change
     if (running && !paused) {
       flickerController.stop();
       flickerController.start();
     }
-    originalOnChange?.(index, total, url);
+    sequenceOnChange?.(index, total, url);
   };
 
   sequenceController.setOptions({ onChange: wrappedOnChange });
@@ -72,7 +72,13 @@ export function createCombinedFlicker(
         });
       }
       if (newOpts.sequence) {
-        sequenceController.setOptions(newOpts.sequence);
+        if ('onChange' in newOpts.sequence) {
+          sequenceOnChange = newOpts.sequence.onChange;
+        }
+        sequenceController.setOptions({
+          ...newOpts.sequence,
+          onChange: wrappedOnChange,
+        });
       }
     },
 
@@ -154,6 +160,7 @@ export function combinedFlicker(
   selector: string,
   options: CombinedFlickerOptions
 ): CombinedFlickerController | null {
+  if (typeof document === 'undefined') return null;
   const el = document.querySelector<HTMLImageElement>(selector);
   if (!el || el.tagName !== 'IMG') return null;
   return createCombinedFlicker(el, options);
@@ -166,6 +173,7 @@ export function combinedFlickerAll(
   selector: string,
   options: CombinedFlickerOptions
 ): CombinedFlickerController[] {
+  if (typeof document === 'undefined') return [];
   const elements = document.querySelectorAll<HTMLImageElement>(selector);
   return Array.from(elements).map((el) => createCombinedFlicker(el, options));
 }
