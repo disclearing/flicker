@@ -2,6 +2,8 @@
 
 Utility for flickering text, images, and DOM elements with configurable timing, intensity, and advanced image manipulation. Includes a **unified text writer** (write/queue/add/remove), **text presets** (zalgo, terminal, neo, cosmic, horror), CSS filters, text effects (scramble, typewriter, decode), presets, plugins, timeline/keyframes, group orchestration, audio-reactive mode, canvas/WebGL renderers, and framework adapters.
 
+**📖 [Full documentation](./docs/README.md)** — installation, text writer, framework adapters, presets, advanced usage, and [migration from glitched-writer](./docs/migration-from-glitched-writer.md).
+
 ## Install
 
 ```bash
