@@ -138,6 +138,56 @@ if (isWebGPUSupported()) {
 - **Controller**: `start()`, `stop()`, `setOptions()`, `destroy()`, `ready(): Promise<boolean>` (resolve when init complete), `canvas`, `isInitialized`.
 - **Options**: Same as canvas plus `powerPreference`, `autoResize`, `onDeviceLost`.
 
+### Direct WebGPU (device, compute, 3D)
+
+For custom GPU work without Three.js, use the direct WebGPU helpers (from the main package or `@disclearing/flicker/webgpu`):
+
+- **Device/context**: `requestWebGPUDevice(options)` and `configureWebGPUCanvas(canvas, device, options)`.
+- **Compute**: `createComputePipeline(device, wgslCode, options)` + `dispatchCompute(encoder, pipeline, bindGroups, workgroupCount)`.
+- **Scene renderer**: `createWebGPUSceneRenderer(canvas, options)` gives a reusable 3D renderer with:
+  - depth testing and clear color
+  - multiple meshes
+  - per-mesh transforms (`setTransform`, `setModelMatrix`)
+  - per-mesh material tint and vertex-color toggle
+- **Lit renderer**: `createWebGPULitSceneRenderer(canvas, options)` adds:
+  - normals + UV vertex inputs
+  - directional light + ambient + Blinn-Phong specular
+  - texture sampling via `mesh.setTexture(source)` or `texture` in material options
+- **Geometry helpers**: `createBoxGeometry(size)`, `createPlaneGeometry(width, height)`.
+- **Camera/math helpers**: `mat4Perspective`, `mat4LookAt`, `mat4Multiply`, `mat4FromTranslationRotationScale`, `createViewProjectionMatrix`.
+- **Orbit controls**: `createWebGPUOrbitControls(canvas, renderer, options)` for drag-rotate and wheel-zoom camera control.
+- **Legacy convenience**: `createWebGPU3DScene(canvas, options)` remains available as a single-cube wrapper for backwards compatibility.
+
+```js
+import {
+  createWebGPULitSceneRenderer,
+  createWebGPUOrbitControls,
+  createBoxGeometry,
+} from '@disclearing/flicker';
+
+const canvas = document.querySelector('canvas');
+const renderer = await createWebGPULitSceneRenderer(canvas, { clearColor: [0.1, 0.1, 0.15, 1] });
+if (renderer) {
+  const mesh = renderer.createMesh(createBoxGeometry(1), {
+    color: [1, 0.8, 0.7, 1],
+    shininess: 48,
+    specularStrength: 0.5,
+    texture: '/albedo.png',
+  });
+  const orbit = createWebGPUOrbitControls(canvas, renderer, { distance: 4 });
+
+  let t = 0;
+  function loop() {
+    t += 0.016;
+    mesh.setTransform({ rotationEuler: [0, t, 0] });
+    orbit.update();
+    renderer.render();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+}
+```
+
 ## Validation
 
 Validate options before use (e.g. from user input):

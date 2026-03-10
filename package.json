@@ -1,6 +1,6 @@
 {
   "name": "@disclearing/flicker",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Utility for flickering text, images, and DOM elements with configurable timing and intensity",
   "type": "module",
   "main": "./dist/index.js",
@@ -31,6 +31,11 @@
       "types": "./dist/adapters/expo.d.ts",
       "import": "./dist/adapters/expo.js",
       "default": "./dist/adapters/expo.js"
+    },
+    "./webgpu": {
+      "types": "./dist/webgpu-direct.d.ts",
+      "import": "./dist/webgpu-direct.js",
+      "default": "./dist/webgpu-direct.js"
     }
   },
   "peerDependenciesMeta": {

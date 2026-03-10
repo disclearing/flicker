@@ -169,6 +169,49 @@ export type { WebGLRendererOptions, WebGLRendererController } from './renderer-w
 export { isWebGPUSupported, createWebGPURenderer, createWebGPUCanvas } from './renderer-webgpu.js';
 export type { WebGPURendererOptions, WebGPURendererController } from './renderer-webgpu.js';
 
+// Direct WebGPU (device, compute, 3D) – also available as @disclearing/flicker/webgpu
+export {
+  requestWebGPUDevice,
+  configureWebGPUCanvas,
+  createComputePipeline,
+  dispatchCompute,
+  createWebGPUTextureFromSource,
+  createWebGPUSceneRenderer,
+  createWebGPULitSceneRenderer,
+  createWebGPUOrbitControls,
+  createWebGPU3DScene,
+  createBoxGeometry,
+  createPlaneGeometry,
+  mat4Identity,
+  mat4Multiply,
+  mat4Perspective,
+  mat4LookAt,
+  mat4FromTranslationRotationScale,
+  createViewProjectionMatrix,
+} from './webgpu-direct.js';
+export type {
+  RequestWebGPUDeviceOptions,
+  WebGPUDeviceResult,
+  ConfigureWebGPUCanvasOptions,
+  CreateComputePipelineOptions,
+  WebGPUGeometryData,
+  WebGPUMaterialOptions,
+  WebGPUMeshTransform,
+  WebGPUMesh,
+  WebGPUSceneRendererOptions,
+  WebGPUSceneRenderer,
+  WebGPUTextureSource,
+  WebGPULitGeometryData,
+  WebGPULitMaterialOptions,
+  WebGPULitMesh,
+  WebGPULitSceneRendererOptions,
+  WebGPULitSceneRenderer,
+  WebGPUOrbitControlsOptions,
+  WebGPUOrbitControls,
+  WebGPU3DSceneOptions,
+  WebGPU3DScene,
+} from './webgpu-direct.js';
+
 // Preloader config and eviction (preloadImage/preloadImages etc. are from image-sequence re-export)
 export { configurePreloader, evictStale } from './preloader.js';
 export type { PreloadOptions, PreloaderConfig } from './preloader.js';

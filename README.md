@@ -167,7 +167,7 @@ ctrl.start();
 
 ## Canvas / WebGL / WebGPU renderers
 
-Canvas, WebGL, and WebGPU renderers apply noise, scanline, or distortion to a source image/video. Canvas auto-resizes with the source, pauses when the tab is hidden (`autoPauseOnHidden`), and supports `scale`/`throttleFps` for performance. WebGL supports continuous rendering via `createWebGLRenderer` and exposes `onContextLost`/`onError`. WebGPU supports `ready()` promise, `autoResize`, and `onDeviceLost`. See [docs/advanced.md](./docs/advanced.md#canvas--webgl--webgpu-renderers).
+Canvas, WebGL, and WebGPU renderers apply noise, scanline, or distortion to a source image/video. Canvas auto-resizes with the source, pauses when the tab is hidden (`autoPauseOnHidden`), and supports `scale`/`throttleFps` for performance. WebGL supports continuous rendering via `createWebGLRenderer` and exposes `onContextLost`/`onError`. WebGPU supports `ready()` promise, `autoResize`, and `onDeviceLost`. For custom GPU work without Three.js, use **direct WebGPU** (`createWebGPUSceneRenderer`, `createWebGPULitSceneRenderer`, mesh/texture helpers, camera/matrix utilities, orbit controls, compute pipelines) — see [Advanced → Direct WebGPU](./docs/advanced.md#direct-webgpu-device-compute-3d).
 
 ```js
 import {

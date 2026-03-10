@@ -9,7 +9,7 @@ Documentation for **@disclearing/flicker**: utilities for flickering text, image
 - **[Text writer](./text-writer.md)** — `createTextWriter`: write, queue, writeAsync, endless, cursor, seed, HTML preserve, presets
 - **[Framework adapters](./framework-adapters.md)** — React, Vue, Svelte, Expo usage
 - **[Presets and effects](./presets-and-effects.md)** — Flicker/sequence/text presets, CSS filters, plugins
-- **[Advanced](./advanced.md)** — Timeline, group, audio-reactive, canvas/WebGL/WebGPU, validation
+- **[Advanced](./advanced.md)** — Timeline, group, audio-reactive, canvas/WebGL/WebGPU, direct WebGPU (device, compute, 3D), validation
 - **[Migration from glitched-writer](./migration-from-glitched-writer.md)** — Side-by-side API comparison and migration checklist
 
 ## Quick links
@@ -23,3 +23,4 @@ Documentation for **@disclearing/flicker**: utilities for flickering text, image
 | Vue 3 | `@disclearing/flicker/vue` → `useFlicker`, `useTextWriter`, directives |
 | Svelte | `@disclearing/flicker/svelte` → `flicker`, `textWriter` actions |
 | Expo / RN | `@disclearing/flicker/expo` → `useExpoFlicker`, `useExpoImageSequence` |
+| Direct WebGPU | `@disclearing/flicker/webgpu` → `createWebGPULitSceneRenderer`, `createWebGPUOrbitControls`, `createWebGPUTextureFromSource` |
